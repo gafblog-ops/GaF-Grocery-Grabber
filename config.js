@@ -4,4 +4,4 @@
 window.GAF_CONFIG = {
   supabaseUrl: 'https://qscimqtvunmkffvejlpw.supabase.co',
   supabaseKey: 'sb_publishable_isRDFbewJROsucwwn3nUAQ_6i1a02Fv'
-}:
+};
