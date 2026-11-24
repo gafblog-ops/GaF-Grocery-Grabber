@@ -246,10 +246,39 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
   .add .grid { grid-template-columns: 1fr; }
 }
 #nHint:empty,#nBc:empty{display:none}
+
+/* ---------- v2 fun: logo hand, flying items, smoke ---------- */
+header.strip { overflow: hidden; }
+.logo .r { cursor: pointer; transform-origin: 50% 100%; }
+.logo .r.squish { animation: fx-squish .55s cubic-bezier(.3,1.6,.5,1); }
+@keyframes fx-squish { 0% { transform: none; } 22% { transform: scale(.78, 1.1) skewX(-4deg); } 48% { transform: scale(1.14, .88); } 70% { transform: scale(.95, 1.04); } 100% { transform: none; } }
+.fx-hand { position: absolute; left: 42%; top: calc(100% - .62em); width: 1.05em; height: 1.1em; min-width: 22px; min-height: 23px; margin-left: -.5em; padding: 0; border: 0; background: none; transform: translateY(70px); transition: transform .45s cubic-bezier(.3,1.5,.5,1); -webkit-tap-highlight-color: transparent; text-shadow: none; -webkit-text-stroke: 0; }
+.fx-hand svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.fx-hand .fg { transform-box: fill-box; transform-origin: 50% 100%; transition: transform .25s; }
+.fx-hand[data-state="grab"] { transform: translateY(0); }
+.fx-hand[data-state="grab"] .fg { transform: scaleY(.62) rotate(4deg); }
+.fx-hand[data-state="grab"] .f1 { transform: scaleY(.62) rotate(14deg); } .fx-hand[data-state="grab"] .f4 { transform: scaleY(.62) rotate(-12deg); }
+.fx-hand[data-state="peek"] { transform: translateY(var(--peek, 17px)); }
+.fx-hand[data-state="peek"] .f1 { transform: rotate(-14deg); } .fx-hand[data-state="peek"] .f2 { transform: rotate(-5deg); } .fx-hand[data-state="peek"] .f3 { transform: rotate(5deg); } .fx-hand[data-state="peek"] .f4 { transform: rotate(14deg); }
+.fx-hand.drum .fg { animation: fx-drum .9s ease-in-out infinite; }
+.fx-hand.drum .f2 { animation-delay: .1s; } .fx-hand.drum .f3 { animation-delay: .2s; } .fx-hand.drum .f4 { animation-delay: .3s; }
+.fx-hand.drum-fast .fg { animation-duration: .45s; } .fx-hand.drum-fast .f2 { animation-delay: .05s; } .fx-hand.drum-fast .f3 { animation-delay: .1s; } .fx-hand.drum-fast .f4 { animation-delay: .15s; }
+@keyframes fx-drum { 0%, 60%, 100% { translate: 0 0; } 25% { translate: 0 -4px; } }
+.fx-fly { position: fixed; left: 0; top: 0; z-index: 95; pointer-events: none; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 5px 10px 3px; border: 2.5px solid var(--ink); border-radius: 10px; background: var(--yellow); box-shadow: 3px 3px 0 var(--ink); font: 400 18px/1.1 var(--comic); letter-spacing: .5px; will-change: transform; }
+.fx-fly.trash { background: #fff; }
+.fx-puff { position: fixed; z-index: 94; width: 0; height: 0; pointer-events: none; }
+.fx-puff i { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 2.5px solid var(--ink); animation: fx-puff .55s ease-out forwards; }
+@keyframes fx-puff { 0% { transform: translate(0,0) scale(.3); opacity: 1; } 60% { opacity: .9; } 100% { transform: translate(var(--dx), var(--dy)) scale(1.25); opacity: 0; } }
+.trash.fx-gulp { animation: bump .35s; }
+.snd { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-hand, .fx-hand .fg { transition: none; }
+  .fx-hand.drum .fg, .logo .r.squish, .cart.bump, .trash.fx-gulp { animation: none; }
+}
 </style>
 </head>
 <body>
-<header class="strip"><div class="logo" aria-label="GaF Grocery Grabber"><span class="g1">G</span><span class="g2">a</span><span class="g3">F</span><span class="w2">GROCERY</span><span class="w3">GRABBE<span class="r" id="logoR">R</span></span></div><div class="ver" id="ver">v1</div></header>
+<header class="strip"><div class="logo" aria-label="GaF Grocery Grabber"><span class="g1">G</span><span class="g2">a</span><span class="g3">F</span><span class="w2">GROCERY</span><span class="w3">GRABBE<span class="r" id="logoR">R</span></span></div><div class="ver" id="ver">v2</div></header>
 <main id="app"></main>
 <div id="layer"></div>
 <nav class="tabs hide" id="tabs"></nav>
@@ -265,7 +294,7 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
      b:<key>  the barcode last recorded for an item name */
 (function (root) {
   'use strict';
-  var CATEGORIES = ['Misc', 'Fresh Vegetables', 'Fresh Fruit', 'Deli Counter', 'Fish', 'Red Meat', 'White Meat', 'Cold Drinks', 'Baking Needs', 'Confectionery', 'Canned Goods', 'Oils and Sauces', 'Pets', 'Bread and Eggs', 'Frozen', 'Dairy', 'Alcohol'];
+  var CATEGORIES = ['Misc', 'Fresh Vegetables', 'Fresh Fruit', 'Deli Counter', 'Fish', 'Red Meat', 'White Meat', 'Cold Drinks', 'Baking Needs', 'Confectionery', 'Pantry', 'Canned Goods', 'Oils and Sauces', 'Pets', 'Bread and Eggs', 'Frozen', 'Dairy', 'Alcohol'];
   var DEFAULT_STORES = ['New World', 'Woolworths', "Pack'nSave"];
   var STATES = ['list', 'cart', 'trash'];
 
@@ -301,6 +330,7 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
   // ---------- category guessing ----------
   // Longest matching phrase wins, so "sour cream" is Dairy, "ice cream" Frozen, "coconut milk" Canned Goods.
   var KEYWORDS = {
+    'Misc': 'tea towel, tea towels, tea light, tea lights',
     'Fresh Vegetables': 'potato, potatoes, kumara, onion, onions, carrot, carrots, broccoli, broccolini, lettuce, tomato, tomatoes, capsicum, capsicums, cucumber, cucumbers, spinach, cabbage, cauliflower, garlic, ginger, mushroom, mushrooms, pumpkin, courgette, courgettes, zucchini, avocado, avocados, celery, corn, beans, green beans, kale, leek, leeks, beetroot, silverbeet, coriander, parsley, basil, herbs, asparagus, bok choy, rocket, salad, mesclun, chilli, chillies, shallots, spring onions, sweetcorn, eggplant, aubergine, peas, snow peas, parsnip, swede, radish',
     'Fresh Fruit': 'apple, apples, banana, bananas, orange, oranges, mandarin, mandarins, kiwifruit, kiwi, pear, pears, grape, grapes, berries, blueberries, blueberry, strawberries, strawberry, raspberries, raspberry, lemon, lemons, lime, limes, mango, mangoes, pineapple, melon, watermelon, rockmelon, peach, peaches, nectarine, nectarines, plum, plums, feijoa, feijoas, tamarillo, tamarillos, cherries, cherry, apricot, apricots, grapefruit, passionfruit',
     'Deli Counter': 'ham, salami, olives, pastrami, chorizo, prosciutto, hummus, dip, dips, coleslaw, deli, bacon, pate, antipasto, sushi, roast chicken',
@@ -310,12 +340,13 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
     'Cold Drinks': 'coke, cola, lemonade, juice, soft drink, soft drinks, sparkling water, water, energy drink, kombucha, ginger beer, iced tea, sprite, fanta, l&p, powerade, gatorade',
     'Baking Needs': 'flour, sugar, baking powder, baking soda, yeast, cocoa, vanilla, icing sugar, chocolate chips, caster sugar, brown sugar, cornflour, golden syrup, desiccated coconut',
     'Confectionery': 'chocolate, lollies, candy, gum, chewing gum, mints, biscuits, chips, crisps, whittakers, cadbury, snack bar, muesli bars',
+    'Pantry': 'coffee, instant coffee, nescafe, moccona, coffee beans, ground coffee, tea, tea bags, green tea, herbal tea, milo, hot chocolate, rice, basmati rice, jasmine rice, pasta, penne, fusilli, macaroni, dried pasta, noodles, instant noodles, cereal, breakfast cereal, cornflakes, weet bix, weetbix, oats, rolled oats, porridge, muesli, granola, crackers, rice crackers, nuts, almonds, cashews, peanuts, walnuts, lentils, couscous, quinoa, spices, salt, cinnamon, paprika, cumin, curry powder, dried herbs, breadcrumbs, popcorn',
     'Canned Goods': 'canned, tinned, baked beans, tuna, chickpeas, coconut milk, coconut cream, soup, spaghetti, canned tomatoes, sardines',
     'Oils and Sauces': 'oil, olive oil, sauce, tomato sauce, ketchup, mayo, mayonnaise, mustard, vinegar, soy sauce, dressing, relish, pesto, gravy, stock, fish sauce, sweet chilli sauce, bbq sauce, hot sauce, sriracha, honey, jam, marmite, vegemite, peanut butter',
     'Pets': 'cat food, dog food, kitty litter, cat litter, litter, whiskas, fancy feast, jellimeat, temptations, dreamies, cat treats, dog treats, cat biscuits',
     'Bread and Eggs': 'bread, eggs, egg, rolls, buns, bun, wraps, wrap, bagels, bagel, sourdough, loaf, crumpets, pita, tortillas, tortilla, english muffins',
     'Frozen': 'frozen, ice cream, fries, hash browns, frozen peas, frozen pizza, ice block, ice blocks, frozen berries, fish fingers',
-    'Dairy': 'milk, cheese, yoghurt, yogurt, greek yoghurt, greek yogurt, butter, cream, sour cream, feta, cottage cheese, parmesan, brie, camembert, comte, cheddar, mozzarella, cream cheese, custard, halloumi',
+    'Dairy': 'milk, cheese, yoghurt, yogurt, greek yoghurt, greek yogurt, butter, cream, sour cream, feta, cottage cheese, parmesan, brie, camembert, comte, cheddar, mozzarella, cream cheese, custard, halloumi, rice milk, oat milk, almond milk',
     'Alcohol': 'beer, wine, cider, whisky, whiskey, vodka, gin, rum, lager, ale, ipa, pinot, sauvignon, merlot, chardonnay, shiraz, bubbly, champagne, prosecco'
   };
   var WORDS = [];
@@ -326,7 +357,7 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
     var k = nameKey(name); if (!k) return 'Misc';
     if (recs && recs['c:' + k] && CATEGORIES.indexOf(recs['c:' + k]) >= 0) return recs['c:' + k];
     for (var s = 0; s < STRONG.length; s++) if (STRONG[s][0].test(k)) return STRONG[s][1];
-    var padded = ' ' + k.replace(/[^a-z0-9&' ]+/g, ' ').replace(/\s+/g, ' ') + ' ', best = null;
+    var padded = ' ' + k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9&' ]+/g, ' ').replace(/\s+/g, ' ') + ' ', best = null;
     WORDS.forEach(function (w) {
       if (padded.indexOf(' ' + w[0] + ' ') >= 0 && (!best || w[0].length > best[0].length)) best = w;
     });
@@ -855,14 +886,253 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
   else root.GGSync = api;
 })(typeof window !== 'undefined' ? window : this);
 </script>
+<script>/* GaF Grocery Grabber v2 fun: flying items, smoke puffs, the logo hand and the sounds.
+   Everything here is decoration. It never changes the records or the totals, and if anything in it fails
+   the app carries on exactly as before. Sounds are made on the spot with Web Audio (no sound files),
+   and only after the first tap or click, which is when browsers allow sound. */
+(function (root) {
+  'use strict';
+  var doc = root.document;
+  var mq = root.matchMedia ? root.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function still() { return !!(mq && mq.matches); }
+  var SKEY = 'gaf-grabber-sound';
+  var soundOn = true;
+  try { soundOn = root.localStorage.getItem(SKEY) !== 'off'; } catch (e) {}
+
+  // ---------- sound ----------
+  var ac = null, master = null, noiseBuf = null;
+  function ctx() {
+    if (!soundOn) return null;
+    try {
+      if (!ac) {
+        var AC = root.AudioContext || root.webkitAudioContext; if (!AC) return null;
+        ac = new AC(); master = ac.createGain(); master.gain.value = 0.55; master.connect(ac.destination);
+        var len = ac.sampleRate, b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+        for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        noiseBuf = b;
+      }
+      if (ac.state === 'suspended') ac.resume();
+      return ac;
+    } catch (e) { return null; }
+  }
+  // Wake the audio up on the first gesture (iPhone needs this) without making a sound.
+  function unlock() {
+    var a = ctx(); if (!a) return;
+    try { var o = a.createBufferSource(); o.buffer = a.createBuffer(1, 1, 22050); o.connect(master); o.start(0); } catch (e) {}
+    if (a.state === 'running') { doc.removeEventListener('touchend', unlock, true); doc.removeEventListener('click', unlock, true); doc.removeEventListener('keydown', unlock, true); }
+  }
+  doc.addEventListener('touchend', unlock, true); doc.addEventListener('click', unlock, true); doc.addEventListener('keydown', unlock, true);
+
+  function env(g, t, a, peak, hold, rel) {
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a);
+    g.gain.setValueAtTime(peak, t + a + hold); g.gain.exponentialRampToValueAtTime(0.0001, t + a + hold + rel);
+  }
+  function noise(a, t, dur) { var s = a.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05); return s; }
+  function tone(a, type, t, dur) { var o = a.createOscillator(); o.type = type; o.start(t); o.stop(t + dur + 0.05); return o; }
+  function chain(nodes) { for (var i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[nodes.length - 1]; }
+  function bp(a, f, q) { var x = a.createBiquadFilter(); x.type = 'bandpass'; x.frequency.value = f; x.Q.value = q; return x; }
+
+  var SFX = {
+    // Air rushing past: filtered noise sweeping up then down.
+    whoosh: function (a, t) {
+      var d = 0.32, s = noise(a, t, d), f = bp(a, 500, 1.4), g = a.createGain();
+      f.frequency.setValueAtTime(350, t); f.frequency.exponentialRampToValueAtTime(2600, t + d * 0.55); f.frequency.exponentialRampToValueAtTime(900, t + d);
+      env(g, t, d * 0.5, 0.9, 0, d * 0.5); chain([s, f, g, master]);
+    },
+    // The cart taking the item: a wire-basket rattle and a low clunk.
+    cart: function (a, t) {
+      for (var i = 0; i < 4; i++) {
+        var tt = t + i * 0.035 + Math.random() * 0.01, o = tone(a, 'square', tt, 0.06), f = bp(a, 2400 + Math.random() * 1600, 9), g = a.createGain();
+        o.frequency.value = 900 + Math.random() * 500; env(g, tt, 0.002, 0.18 - i * 0.03, 0, 0.05); chain([o, f, g, master]);
+      }
+      var k = tone(a, 'sine', t, 0.14), kg = a.createGain();
+      k.frequency.setValueAtTime(190, t); k.frequency.exponentialRampToValueAtTime(70, t + 0.12); env(kg, t, 0.004, 0.5, 0, 0.12); chain([k, kg, master]);
+    },
+    // Cash register: the drawer clack, then two bright bells ("cha" then "ching").
+    chaching: function (a, t) {
+      var c = noise(a, t, 0.07), cf = bp(a, 3000, 1.2), cg = a.createGain(); env(cg, t, 0.002, 0.5, 0.01, 0.05); chain([c, cf, cg, master]);
+      [[t + 0.07, 1318.5, 0.28], [t + 0.17, 1975.5, 0.7]].forEach(function (b) {
+        [1, 2.76, 5.4].forEach(function (m, i) {
+          var o = tone(a, 'sine', b[0], b[2]), g = a.createGain(); o.frequency.value = b[1] * m;
+          env(g, b[0], 0.003, [0.32, 0.12, 0.05][i], 0, b[2]); chain([o, g, master]);
+        });
+      });
+    },
+    // Paper being scrunched up: a burst of short crackles through a high band.
+    crumple: function (a, t) {
+      var n = 18 + Math.floor(Math.random() * 6);
+      for (var i = 0; i < n; i++) {
+        var tt = t + Math.pow(i / n, 0.8) * 0.42 + Math.random() * 0.015, d = 0.012 + Math.random() * 0.03;
+        var s = noise(a, tt, d), f = bp(a, 1500 + Math.random() * 4500, 2 + Math.random() * 3), g = a.createGain();
+        env(g, tt, 0.001, 0.25 + Math.random() * 0.45, 0, d); chain([s, f, g, master]);
+      }
+      var b = noise(a, t, 0.45), bf = bp(a, 4500, 0.7), bg = a.createGain(); env(bg, t, 0.05, 0.08, 0.25, 0.15); chain([b, bf, bg, master]);
+    },
+    // Fingers sliding on a party balloon: a stick-slip squeak with a wobbling, stretching pitch.
+    squeak: function (a, t) {
+      var d = 0.34, o = tone(a, 'sawtooth', t, d), lfo = tone(a, 'sine', t, d), lg = a.createGain();
+      o.frequency.setValueAtTime(520, t); o.frequency.linearRampToValueAtTime(980, t + d * 0.6); o.frequency.linearRampToValueAtTime(760, t + d);
+      lfo.frequency.setValueAtTime(18, t); lfo.frequency.linearRampToValueAtTime(34, t + d); lg.gain.value = 70; chain([lfo, lg, o.frequency]);
+      var am = tone(a, 'square', t, d), amg = a.createGain(), vca = a.createGain(); am.frequency.value = 42; amg.gain.value = 0.35; vca.gain.value = 0.6; chain([am, amg, vca.gain]);
+      var f1 = bp(a, 1100, 3), f2 = bp(a, 2600, 5), g = a.createGain(); env(g, t, 0.02, 0.5, d * 0.55, d * 0.35);
+      chain([o, vca, f1, g]); vca.connect(f2); f2.connect(g); g.connect(master);
+      var r = noise(a, t, d), rf = bp(a, 3200, 4), rg = a.createGain(); env(rg, t, 0.02, 0.06, d * 0.5, d * 0.4); chain([r, rf, rg, master]);
+    },
+    // A breathy, playful little "hee-hee-hee": an original synthesised voice, falling then lifting at the end.
+    giggle: function (a, t) {
+      var notes = [620, 680, 590, 540, 560, 640], start = t;
+      notes.forEach(function (p, i) {
+        var d = i === notes.length - 1 ? 0.16 : 0.075, tt = start;
+        start += d + 0.045;
+        var o = tone(a, 'sawtooth', tt, d), vib = tone(a, 'sine', tt, d), vg = a.createGain();
+        o.frequency.setValueAtTime(p * 1.04, tt); o.frequency.exponentialRampToValueAtTime(p * (i === notes.length - 1 ? 1.12 : 0.92), tt + d);
+        vib.frequency.value = 9; vg.gain.value = p * 0.02; chain([vib, vg, o.frequency]);
+        var g = a.createGain(); env(g, tt, 0.012, 0.32, d * 0.4, d * 0.6);
+        [[420, 6, 1], [2500, 9, 0.55], [3300, 10, 0.3]].forEach(function (fm) { var f = bp(a, fm[0], fm[1]), fg = a.createGain(); fg.gain.value = fm[2]; o.connect(f); chain([f, fg, g]); });
+        var br = noise(a, tt, d), bf = bp(a, 2800, 1.5), bg = a.createGain(); env(bg, tt, 0.01, 0.12, d * 0.3, d * 0.6); chain([br, bf, bg, master]);
+        g.connect(master);
+      });
+    }
+  };
+  function play(name, delay) {
+    var a = ctx(); if (!a || !SFX[name]) return;
+    try { SFX[name](a, a.currentTime + 0.01 + (delay || 0)); } catch (e) {}
+  }
+
+  // ---------- flying things ----------
+  var live = [];          // elements and timers to clean up
+  function track(el) { live.push(el); return el; }
+  function later(fn, ms) { var id = setTimeout(function () { var i = live.indexOf(id); if (i >= 0) live.splice(i, 1); fn(); }, ms); live.push(id); return id; }
+  function cleanup() { live.forEach(function (x) { if (typeof x !== 'object') clearTimeout(x); else if (x && x.remove) x.remove(); }); live = []; }
+  function rectOf(x) { if (!x) return null; if (x.getBoundingClientRect) { var r = x.getBoundingClientRect(); return r.width || r.height ? r : null; } return x; }
+
+  function puff(at) {
+    var r = rectOf(at); if (!r || still()) return;
+    var p = track(doc.createElement('div')); p.className = 'fx-puff'; p.setAttribute('aria-hidden', 'true');
+    p.style.left = (r.left + r.width / 2) + 'px'; p.style.top = (r.top + r.height / 2) + 'px';
+    for (var i = 0; i < 7; i++) { var c = doc.createElement('i'); var ang = i / 7 * Math.PI * 2; c.style.setProperty('--dx', Math.round(Math.cos(ang) * 34) + 'px'); c.style.setProperty('--dy', Math.round(Math.sin(ang) * 22) + 'px'); c.style.animationDelay = (i % 3) * 20 + 'ms'; p.appendChild(c); }
+    doc.body.appendChild(p); later(function () { p.remove(); }, 650);
+  }
+  // A small comic tag carrying the item name, flying along an arc from one place to another.
+  function fly(label, from, to, opts, done) {
+    var a = rectOf(from), b = rectOf(to);
+    if (!a || !b || still() || !doc.body.animate) { if (done) done(false); return; }
+    var el = track(doc.createElement('div')); el.className = 'fx-fly' + (opts.trash ? ' trash' : ''); el.setAttribute('aria-hidden', 'true'); el.textContent = label;
+    doc.body.appendChild(el);
+    var w = el.offsetWidth, h = el.offsetHeight;
+    var x0 = a.left + a.width / 2 - w / 2, y0 = a.top + a.height / 2 - h / 2, x1 = b.left + b.width / 2 - w / 2, y1 = b.top + b.height / 2 - h / 2;
+    var lift = Math.max(70, Math.min(200, Math.abs(x1 - x0) * 0.4 + 60)), spin = (x1 > x0 ? 1 : -1) * (opts.trash ? 200 : 300);
+    var frames = [], N = 14, rim = opts.bounce ? 0.72 : 1;
+    for (var i = 0; i <= N; i++) {
+      var k = i / N, u = k * rim, x = x0 + (x1 - x0) * u, y = y0 + (y1 - y0) * u - lift * 4 * u * (1 - u);
+      frames.push({ transform: 'translate(' + x + 'px,' + y + 'px) rotate(' + (spin * k * rim) + 'deg) scale(' + (1 - 0.45 * u) + ')', offset: k * (opts.bounce ? 0.6 : 1) });
+    }
+    if (opts.bounce) {
+      // Clip the rim, pop up and sideways, then drop in.
+      var xr = x0 + (x1 - x0) * rim, yr = y0 + (y1 - y0) * rim - lift * 4 * rim * (1 - rim), side = x1 > x0 ? 1 : -1;
+      frames.push({ transform: 'translate(' + (xr + side * 18) + 'px,' + (yr - 48) + 'px) rotate(' + (spin * 1.2) + 'deg) scale(.6)', offset: 0.8 });
+      frames.push({ transform: 'translate(' + x1 + 'px,' + y1 + 'px) rotate(' + (spin * 1.5) + 'deg) scale(.5)', offset: 1 });
+    }
+    frames[frames.length - 1].opacity = 0.2; frames[0].opacity = 1;
+    var anim;
+    try { anim = el.animate(frames, { duration: opts.bounce ? 760 : 480, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' }); } catch (e) { el.remove(); if (done) done(false); return; }
+    if (opts.bounce) later(function () { play('cart'); }, 450);
+    var fin = false;
+    function end() { if (fin) return; fin = true; el.remove(); var i = live.indexOf(el); if (i >= 0) live.splice(i, 1); if (done) done(true); }
+    anim.onfinish = end; later(end, (opts.bounce ? 760 : 480) + 200);
+  }
+
+  var tossCount = 0;
+  /* An item went into the cart. from: where it was (an element or a rectangle). getCart: finds the cart now. */
+  function toCart(label, from, getCart) {
+    play('whoosh');
+    var bounce = !still() && (++tossCount % 5 === 3);
+    puff(from);
+    fly(label, from, getCart(), { bounce: bounce }, function (flew) {
+      var c = getCart(); if (c && flew) { c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
+      play('cart'); play('chaching', 0.05);
+    });
+  }
+  /* An item went into the trash. */
+  function toTrash(label, from, getTrash) {
+    play('crumple');
+    puff(from);
+    fly(label, from, getTrash(), { trash: true }, function (flew) { var t = getTrash(); if (t && flew) { t.classList.remove('fx-gulp'); void t.offsetWidth; t.classList.add('fx-gulp'); } });
+  }
+  /* An item moved inside a sheet (no cart or bin on screen): just the sound. */
+  function moved(to) { if (to === 'cart') { play('whoosh'); play('cart', 0.25); play('chaching', 0.3); } else if (to === 'trash') play('crumple'); else play('whoosh'); }
+
+  // ---------- the logo hand ----------
+  var HAND = '<svg viewBox="0 0 60 64" aria-hidden="true"><g stroke="#000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" fill="#fff">' +
+    '<path class="cuff" d="M16 64 L14 50 Q30 45 46 50 L44 64 Z" fill="#fff"/><path d="M18 51 Q30 47 42 51" fill="none" stroke-width="2"/>' +
+    '<path class="palm" d="M15 50 Q10 36 14 28 L46 28 Q50 38 45 50 Z"/>' +
+    '<g class="fingers"><path class="fg f1" d="M15 31 Q11 14 18 12 Q24 12 23 30"/><path class="fg f2" d="M23 30 Q21 8 28 7 Q35 8 32 29"/><path class="fg f3" d="M32 29 Q32 9 38 9 Q45 11 40 30"/><path class="fg f4" d="M40 30 Q42 15 47 17 Q52 20 46 33"/></g>' +
+    '<path class="thumb" d="M15 40 Q4 36 6 28 Q9 24 16 31"/></g></svg>';
+  var hand = null, idleT = null, drumT = null, grabT = null, lastPoke = Date.now();
+  // How far down the hand slides so only its fingertips show above the bottom of the black strip.
+  function peekDistance() {
+    var strip = hand.closest('header') || hand.parentNode, sb = strip.getBoundingClientRect();
+    var prev = hand.style.transition; hand.style.transition = 'none'; var was = hand.getAttribute('data-state'); hand.setAttribute('data-state', 'grab');
+    var hb = hand.getBoundingClientRect(); hand.setAttribute('data-state', was); void hand.offsetWidth; hand.style.transition = prev;
+    var show = Math.max(7, hb.height * 0.3);
+    var bw = parseFloat(root.getComputedStyle(strip).borderBottomWidth) || 0;
+    return Math.max(0, Math.round(sb.bottom - bw - show - hb.top));
+  }
+  function setHand(state) { if (!hand) return; if (state === 'peek') hand.style.setProperty('--peek', peekDistance() + 'px'); hand.setAttribute('data-state', state); }
+  function scheduleIdle() {
+    clearTimeout(idleT); clearTimeout(drumT); if (!hand) return;
+    hand.classList.remove('drum', 'drum-fast');
+    idleT = setTimeout(function () { if (!hand || doc.hidden) return scheduleIdle(); hand.classList.add('drum'); drumT = setTimeout(function () { if (hand) hand.classList.add('drum-fast'); }, 30000); }, 60000);
+  }
+  function poke() {
+    var R = doc.getElementById('logoR'); if (!hand || !R) return;
+    lastPoke = Date.now();
+    if (hand.getAttribute('data-state') === 'grab') {
+      // Let go: the R squashes in like a soft balloon and springs back, and the hand slides down to peek.
+      R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish');
+      setHand('peek'); scheduleIdle();
+    } else {
+      // Reach up and grab the R again.
+      setHand('grab'); play('squeak'); play('giggle', 0.36);
+      clearTimeout(grabT); grabT = setTimeout(function () { R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish'); }, 10);
+      scheduleIdle();
+    }
+  }
+  function initHand() {
+    var R = doc.getElementById('logoR'); if (!R || hand) return;
+    hand = doc.createElement('button'); hand.type = 'button'; hand.className = 'fx-hand'; hand.setAttribute('aria-label', 'Poke the logo hand'); hand.innerHTML = HAND;
+    setHand('down'); R.appendChild(hand);
+    R.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); poke(); });
+    // Phones sometimes hand a tap on the peeking fingertips to the strip around them, so catch it there too.
+    var strip = R.closest('header');
+    if (strip) strip.addEventListener('click', function (e) {
+      if (!hand || R.contains(e.target)) return;
+      var b = hand.getBoundingClientRect();
+      if (e.clientX >= b.left - 14 && e.clientX <= b.right + 14 && e.clientY >= b.top - 12) poke();
+    });
+    R.addEventListener('animationend', function (e) { if (e.animationName === 'fx-squish') R.classList.remove('squish'); });
+    // Rise up and grab the R shortly after the page opens (silently: no sound before the first tap).
+    setTimeout(function () { setHand('grab'); scheduleIdle(); }, still() ? 0 : 700);
+    doc.addEventListener('visibilitychange', function () { if (doc.hidden) { clearTimeout(idleT); clearTimeout(drumT); hand.classList.remove('drum', 'drum-fast'); } else scheduleIdle(); });
+    // Any use of the app counts as not idle.
+    ['pointerdown', 'keydown'].forEach(function (ev) { doc.addEventListener(ev, function () { if (hand && hand.classList.contains('drum')) scheduleIdle(); else if (Date.now() - lastPoke > 5000) { lastPoke = Date.now(); scheduleIdle(); } }, true); });
+  }
+
+  function setSound(on) { soundOn = !!on; try { root.localStorage.setItem(SKEY, on ? 'on' : 'off'); } catch (e) {} if (on) { ctx(); play('chaching'); } else if (ac && ac.suspend) ac.suspend(); }
+
+  root.GFX = { toCart: toCart, toTrash: toTrash, moved: moved, puff: puff, play: play, initHand: initHand, poke: poke, cleanup: cleanup,
+    sound: function () { return soundOn; }, setSound: setSound, reduced: still, _sfx: SFX };
+  if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', initHand); else initHand();
+})(window);
+</script>
 <script>/* GaF Grocery Grabber screens. */
 (function () {
   'use strict';
-  var G = window.GG, S = window.GGSync, CFG = window.GAF_CONFIG || {};
+  var G = window.GG, S = window.GGSync, CFG = window.GAF_CONFIG || {}, FX = window.GFX || null;
   var $ = function (id) { return document.getElementById(id); };
   var app = $('app'), layer = $('layer'), tabsEl = $('tabs');
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  var CAT_COL = { 'Misc': '#E5E5E5', 'Fresh Vegetables': '#7BE04B', 'Fresh Fruit': '#FFB13B', 'Deli Counter': '#FF9EC4', 'Fish': '#7FD8FF', 'Red Meat': '#FF6B6B', 'White Meat': '#FFE1C2', 'Cold Drinks': '#5CE1E6', 'Baking Needs': '#F3D9A4', 'Confectionery': '#D59BFF', 'Canned Goods': '#C9D1D9', 'Oils and Sauces': '#FFD60A', 'Pets': '#B8F28A', 'Bread and Eggs': '#F6C177', 'Frozen': '#BFE9FF', 'Dairy': '#FFFFFF', 'Alcohol': '#C084FC' };
+  var CAT_COL = { 'Misc': '#E5E5E5', 'Fresh Vegetables': '#7BE04B', 'Fresh Fruit': '#FFB13B', 'Deli Counter': '#FF9EC4', 'Fish': '#7FD8FF', 'Red Meat': '#FF6B6B', 'White Meat': '#FFE1C2', 'Cold Drinks': '#5CE1E6', 'Baking Needs': '#F3D9A4', 'Confectionery': '#D59BFF', 'Pantry': '#E8B98A', 'Canned Goods': '#C9D1D9', 'Oils and Sauces': '#FFD60A', 'Pets': '#B8F28A', 'Bread and Eggs': '#F6C177', 'Frozen': '#BFE9FF', 'Dairy': '#FFFFFF', 'Alcohol': '#C084FC' };
   var IC = {
     cart: '<svg viewBox="0 0 40 36" fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><path d="M2 4h6l5 20h19l5-14H11" fill="#fff"/><circle cx="15" cy="31" r="3" fill="#000"/><circle cx="30" cy="31" r="3" fill="#000"/></svg>',
     trash: '<svg viewBox="0 0 30 30" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h22M11 8V4h8v4M7 8l2 19h12l2-19" fill="#fff"/><path d="M13 13v9M17 13v9"/></svg>',
@@ -910,7 +1180,7 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
   (function version() {
     var el = $('ver'), c = null;
     try { c = JSON.parse(localStorage.getItem('gaf-grabber-ver') || 'null'); } catch (e) {}
-    function show(v) { if (v && v.count) el.textContent = 'v1.' + v.count; }
+    function show(v) { if (v && v.count) el.textContent = 'v2.' + v.count; }
     show(c);
     if (location.protocol.indexOf('http') !== 0) return;
     fetch('api/version', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (v) {
@@ -1084,6 +1354,7 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
       '<div class="btns"><button class="btn small" data-a="sheet" data-v="password">Change password</button><button class="btn small" data-a="signout">Sign out</button></div></div>' +
       '<div class="panel"><h3>Export</h3><p>Every item you\'ve bought, with date, store, branch, price and barcode, as a spreadsheet file.</p><div class="btns"><button class="btn small" data-a="csv"' + (n ? '' : ' disabled') + '>Export history (CSV)</button></div></div>' +
       '<div class="panel"><h3>Share with friends</h3><p>Send friends this page\'s link. They tap <b>Create an account</b> and get their own private list, limit and history. Nobody can see anyone else\'s.</p></div>' +
+      '<div class="panel"><h3>Sounds</h3><div class="snd"><p style="margin:0">Whoosh, cart, cha-ching, paper scrunch and the logo hand\'s squeak and giggle.</p><button class="btn small' + (FX && FX.sound() ? ' go' : '') + '" data-a="sound" aria-pressed="' + !!(FX && FX.sound()) + '">' + (FX && FX.sound() ? 'Sound on' : 'Sound off') + '</button></div></div>' +
       '<div class="panel"><h3>About</h3><p class="tiny muted">GaF Grocery Grabber ' + esc($('ver').textContent) + '. The number after the dot is how many commits the GitHub repo has.</p></div>';
   }
 
@@ -1262,14 +1533,15 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
       case 'limit': openSheet({ type: 'limit', focus: '#lVal' }); break;
       case 'nolimit': act(G.setLimit(r, null), 'Limit removed'); closeSheet(); break;
       case 'edit': openSheet({ type: 'edit', id: v }); break;
-      case 'grab': it = r['i:' + v]; act(G.moveItem(r, v, 'cart'), it.name + ' in the cart' + (it.price != null ? ' +' + G.money(G.lineCents(it) / 100) : ''), true); bumpCart(); break;
+      case 'grab': { it = r['i:' + v]; if (!it || it.state !== 'list') break; var from = rowRect(v); act(G.moveItem(r, v, 'cart'), it.name + ' in the cart' + (it.price != null ? ' +' + G.money(G.lineCents(it) / 100) : ''), true); fxCart(it.name, from); break; }
       case 'mv': {
         var id = el.getAttribute('data-id'); it = r['i:' + id]; if (!it) break;
         var words = { list: 'back on the list', cart: 'in the cart', trash: 'in the trash' };
         var keepSheet = ui.sheet && (ui.sheet.type === 'cart' || ui.sheet.type === 'trash');
         if (!keepSheet) closeSheet();
         act(G.moveItem(r, id, v), it.name + ' ' + words[v], true);
-        if (v === 'cart') bumpCart();
+        if (v === 'cart' && !FX) bumpCart();
+        fxSafe(function () { FX.moved(v); });
         break;
       }
       case 'copen': ui.cartOpen = ui.cartOpen === v ? '' : v; renderSheet(); break;
@@ -1300,10 +1572,16 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
       case 'readd': { var lp = G.lastPrice(r, v), ph = G.priceHistory(r, v)[0]; act(G.addItem(r, { name: ph ? ph.name : v, price: lp ? lp.price : null, cat: ph ? ph.cat : undefined, barcode: ph && ph.barcode || '' }), v + ' added to your list', true); closeSheet(); break; }
       case 'popall': ui.popAll = !ui.popAll; render(); break;
       case 'csv': downloadCSV(); break;
+      case 'sound': if (FX) { FX.setSound(!FX.sound()); render(); } break;
       case 'signout': if (confirm('Sign out of GaF Grocery Grabber on this device?')) { closeSheet(); eng.signOut(); ui.auth = 'in'; render(); } break;
     }
   }
   function lastStore() { var t = G.trips(R())[0]; return t ? { store: t.store, branch: t.branch || '' } : { store: '', branch: '' }; }
+  // v2 effects. Each runs after the change is saved; a failure here never touches the list or the totals.
+  function fxSafe(fn) { try { if (FX) fn(); } catch (e) {} }
+  function rowRect(id) { var row = document.querySelector('.item[data-id="' + CSS.escape(id) + '"]'); if (!row) return null; var b = row.getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; }
+  function fxCart(name, from) { if (!FX) { bumpCart(); return; } fxSafe(function () { FX.toCart(name, from, function () { return $('cartBox'); }); }); }
+  function fxTrash(name, from) { fxSafe(function () { FX.toTrash(name, from, function () { return $('trashBox'); }); }); }
   function bumpCart() { var c = $('cartBox'); if (!c) return; c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
   function downloadCSV() {
     var csv = G.historyCSV(R()), name = 'grocery-history-' + G.todayISO() + '.csv';
@@ -1477,11 +1755,11 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
   }
   function dragEnd() {
     var d = dragging; if (!d) return;
-    var r = R(), it = r['i:' + d.id], t = d.target;
+    var r = R(), it = r['i:' + d.id], t = d.target, gb = d.ghost && d.ghost.getBoundingClientRect();
     finishDrag();
     if (!it || !t) { render(); return; }
-    if (t.kind === 'cart') { act(G.moveItem(r, d.id, 'cart'), it.name + ' in the cart' + (it.price != null ? ' +' + G.money(G.lineCents(it) / 100) : ''), true); bumpCart(); }
-    else if (t.kind === 'trash') act(G.moveItem(r, d.id, 'trash'), it.name + ' in the trash', true);
+    if (t.kind === 'cart') { act(G.moveItem(r, d.id, 'cart'), it.name + ' in the cart' + (it.price != null ? ' +' + G.money(G.lineCents(it) / 100) : ''), true); fxCart(it.name, gb); }
+    else if (t.kind === 'trash') { act(G.moveItem(r, d.id, 'trash'), it.name + ' in the trash', true); fxTrash(it.name, gb); }
     else if (t.kind === 'list') { var ch = G.placeInList(r, d.id, t.cat, t.before); if (Object.keys(ch).length) act(ch, G.catOf(it) !== t.cat ? it.name + ' moved to ' + t.cat : '', G.catOf(it) !== t.cat); else render(); }
     else render();
   }
