@@ -109,7 +109,12 @@ nav.tabs button.on svg { filter: drop-shadow(0 0 0 #000); }
   font: 400 26px/1 var(--comic); letter-spacing: .5px; color: var(--lv); -webkit-text-stroke: 1.4px #000; paint-order: stroke fill; text-shadow: 2px 2px 0 #000;
   white-space: nowrap;
 }
-.cart .dollar { font-size: 25px; }
+.cart .dollar {
+  /* The cart total: a black comic caption with a white ring, so the budget colour pops on the yellow cart. */
+  font-size: 25px; line-height: 1; padding: 4px 9px 2px; border-radius: 10px; background: var(--ink); border: 2px solid #fff; box-shadow: 0 0 0 2.5px var(--ink);
+  color: var(--lv-pop, #fff); -webkit-text-stroke: 0; text-shadow: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.cart.lv-green { --lv-pop: #5BF08F; } .cart.lv-amber { --lv-pop: #FFE14D; } .cart.lv-orange { --lv-pop: #FFA94D; } .cart.lv-red { --lv-pop: #FF7A93; } .cart.lv-none { --lv-pop: #FFFFFF; }
 .cart.hot, .trash.hot { transform: scale(1.12) rotate(-3deg); outline: 4px dashed var(--red); outline-offset: 3px; }
 .cart.bump { animation: bump .35s; }
 @keyframes bump { 30% { transform: scale(1.15) rotate(3deg); } 60% { transform: scale(.95); } }
@@ -169,13 +174,14 @@ body.dragging-on { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* ---------- sheets ---------- */
 .backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
 .sheet {
-  width: 100%; max-width: 640px; max-height: calc(100vh - var(--safe-t) - 24px); overflow: auto; -webkit-overflow-scrolling: touch;
+  width: 100%; max-width: 640px; max-height: calc(100vh - var(--safe-t) - 24px); max-height: calc(100dvh - var(--safe-t) - 24px); overflow: auto; -webkit-overflow-scrolling: touch;
   background: var(--paper); border: 3px solid var(--ink); border-bottom: 0; border-radius: 20px 20px 0 0; padding: 14px 14px calc(18px + var(--safe-b));
   box-shadow: 0 -4px 0 var(--ink); animation: up .18s ease-out;
 }
 @media (min-width: 700px) { .backdrop { align-items: center; } .sheet { border-radius: 20px; border-bottom: 3px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); max-height: 88vh; padding-bottom: 18px; } }
 @keyframes up { from { transform: translateY(40px); opacity: 0; } }
-.sheet .top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.sheet .top { display: flex; align-items: center; gap: 10px; margin: -14px 0 12px; padding: 14px 0 6px; position: sticky; top: -14px; z-index: 3; background: var(--paper); }
+.sheet-foot { margin-top: 16px; }
 .sheet .top h2 { flex: 1; margin: 0; font: 400 28px/1 var(--comic); letter-spacing: 1px; }
 .x { width: 40px; height: 40px; border-radius: 50%; border: 2.5px solid var(--ink); background: #fff; font-size: 22px; line-height: 1; padding: 0; }
 .sheet .grid { display: grid; gap: 10px; }
@@ -460,6 +466,12 @@ header.strip { overflow: hidden; }
   function emptyTrash(recs) {
     var ch = {}; items(recs, 'trash').forEach(function (it) { ch['i:' + it.id] = null; }); return ch;
   }
+  /* Empty the cart into the trash (not deleted: everything can come back until the trash is emptied). */
+  function emptyCart(recs) {
+    var ch = {}, r = recs;
+    items(recs, 'cart').forEach(function (it) { var c = moveItem(r, it.id, 'trash'); r = apply(r, c); Object.assign(ch, c); });
+    return ch;
+  }
   function deleteItem(recs, id) { var ch = {}; if (recs['i:' + id]) ch['i:' + id] = null; return ch; }
   function setLimit(recs, v) {
     var p = v == null || v === '' ? null : (typeof v === 'number' ? v : parseMoney(v));
@@ -630,7 +642,7 @@ header.strip { overflow: hidden; }
     CATEGORIES: CATEGORIES, DEFAULT_STORES: DEFAULT_STORES, nameKey: nameKey, storeKey: storeKey, uid: uid,
     parseMoney: parseMoney, parseQty: parseQty, money: money, cents: cents, lineCents: lineCents, qtyText: qtyText,
     guessCategory: guessCategory, items: items, catOf: catOf, listGroups: listGroups, totals: totals, limit: limit, budgetLevel: budgetLevel,
-    addItem: addItem, editItem: editItem, moveItem: moveItem, placeInList: placeInList, emptyTrash: emptyTrash, deleteItem: deleteItem, setLimit: setLimit,
+    addItem: addItem, editItem: editItem, moveItem: moveItem, placeInList: placeInList, emptyTrash: emptyTrash, emptyCart: emptyCart, deleteItem: deleteItem, setLimit: setLimit,
     stores: stores, branches: branches, rememberStore: rememberStore, canonicalStore: canonicalStore,
     todayISO: todayISO, completeTrip: completeTrip, trips: trips, purchases: purchases, lastPrice: lastPrice, knownNames: knownNames, findByBarcode: findByBarcode,
     filterPurchases: filterPurchases, report: report, priceHistory: priceHistory, historyCSV: historyCSV, apply: apply
@@ -978,18 +990,27 @@ header.strip { overflow: hidden; }
       chain([o, vca, f1, g]); vca.connect(f2); f2.connect(g); g.connect(master);
       var r = noise(a, t, d), rf = bp(a, 3200, 4), rg = a.createGain(); env(rg, t, 0.02, 0.06, d * 0.5, d * 0.4); chain([r, rf, rg, master]);
     },
-    // A breathy, playful little "hee-hee-hee": an original synthesised voice, falling then lifting at the end.
+    // A cute, girly "tee-hee-hee-hee!": an original synthesised high voice. Quick bright syllables, each with a
+    // breathy "h" and a little upward flick, drifting down, then a squeaky rising "hee!" at the end.
     giggle: function (a, t) {
-      var notes = [620, 680, 590, 540, 560, 640], start = t;
+      var notes = [1180, 1260, 1150, 1080, 1120, 1040, 1320], start = t;
       notes.forEach(function (p, i) {
-        var d = i === notes.length - 1 ? 0.16 : 0.075, tt = start;
-        start += d + 0.045;
-        var o = tone(a, 'sawtooth', tt, d), vib = tone(a, 'sine', tt, d), vg = a.createGain();
-        o.frequency.setValueAtTime(p * 1.04, tt); o.frequency.exponentialRampToValueAtTime(p * (i === notes.length - 1 ? 1.12 : 0.92), tt + d);
-        vib.frequency.value = 9; vg.gain.value = p * 0.02; chain([vib, vg, o.frequency]);
-        var g = a.createGain(); env(g, tt, 0.012, 0.32, d * 0.4, d * 0.6);
-        [[420, 6, 1], [2500, 9, 0.55], [3300, 10, 0.3]].forEach(function (fm) { var f = bp(a, fm[0], fm[1]), fg = a.createGain(); fg.gain.value = fm[2]; o.connect(f); chain([f, fg, g]); });
-        var br = noise(a, tt, d), bf = bp(a, 2800, 1.5), bg = a.createGain(); env(bg, tt, 0.01, 0.12, d * 0.3, d * 0.6); chain([br, bf, bg, master]);
+        var last = i === notes.length - 1, d = last ? 0.2 : 0.058, tt = start + 0.018;
+        start += d + (i === 0 ? 0.07 : 0.04);
+        // breathy "h" just before the voice comes in
+        var h = noise(a, tt - 0.018, 0.03), hf = bp(a, 3600, 1.2), hg = a.createGain(); env(hg, tt - 0.018, 0.006, 0.09, 0.006, 0.02); chain([h, hf, hg, master]);
+        var o = tone(a, 'triangle', tt, d), o2 = tone(a, 'sawtooth', tt, d), vib = tone(a, 'sine', tt, d), vg = a.createGain();
+        [o, o2].forEach(function (x) {
+          x.frequency.setValueAtTime(p * 0.94, tt); x.frequency.exponentialRampToValueAtTime(p * 1.06, tt + d * 0.3);
+          x.frequency.exponentialRampToValueAtTime(p * (last ? 1.32 : 0.97), tt + d);
+          vg.connect(x.frequency);
+        });
+        vib.frequency.value = last ? 7 : 13; vg.gain.value = p * (last ? 0.03 : 0.018); vib.connect(vg);
+        var g = a.createGain(); env(g, tt, 0.008, last ? 0.26 : 0.3, d * 0.35, d * 0.65);
+        o.connect(g);
+        var sg = a.createGain(); sg.gain.value = 0.35; o2.connect(sg);
+        [[2900, 8, 0.7], [3800, 10, 0.4]].forEach(function (fm) { var f = bp(a, fm[0], fm[1]), fg = a.createGain(); fg.gain.value = fm[2]; sg.connect(f); chain([f, fg, g]); });
+        var br = noise(a, tt, d), bf = bp(a, 4200, 1.8), bg = a.createGain(); env(bg, tt, 0.01, 0.05, d * 0.3, d * 0.6); chain([br, bf, bg, master]);
         g.connect(master);
       });
     }
@@ -1068,7 +1089,8 @@ header.strip { overflow: hidden; }
     '<path class="palm" d="M15 50 Q10 36 14 28 L46 28 Q50 38 45 50 Z"/>' +
     '<g class="fingers"><path class="fg f1" d="M15 31 Q11 14 18 12 Q24 12 23 30"/><path class="fg f2" d="M23 30 Q21 8 28 7 Q35 8 32 29"/><path class="fg f3" d="M32 29 Q32 9 38 9 Q45 11 40 30"/><path class="fg f4" d="M40 30 Q42 15 47 17 Q52 20 46 33"/></g>' +
     '<path class="thumb" d="M15 40 Q4 36 6 28 Q9 24 16 31"/></g></svg>';
-  var hand = null, idleT = null, drumT = null, grabT = null, lastPoke = Date.now();
+  var hand = null, idleT = null, drumT = null, grabT = null, backT = null, lastPoke = Date.now();
+  var HOLD_MS = 1600; // how long the hand holds the R (squeak, then the giggle) before it retreats back down
   // How far down the hand slides so only its fingertips show above the bottom of the black strip.
   function peekDistance() {
     var strip = hand.closest('header') || hand.parentNode, sb = strip.getBoundingClientRect();
@@ -1084,19 +1106,22 @@ header.strip { overflow: hidden; }
     hand.classList.remove('drum', 'drum-fast');
     idleT = setTimeout(function () { if (!hand || doc.hidden) return scheduleIdle(); hand.classList.add('drum'); drumT = setTimeout(function () { if (hand) hand.classList.add('drum-fast'); }, 30000); }, 60000);
   }
+  function letGo() {
+    // Let go: the R squashes in like a soft balloon and springs back, and the hand retreats back down to peek.
+    var R = doc.getElementById('logoR'); clearTimeout(backT); if (!hand || !R) return;
+    if (hand.getAttribute('data-state') !== 'grab') return;
+    R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish');
+    setHand('peek'); scheduleIdle();
+  }
   function poke() {
     var R = doc.getElementById('logoR'); if (!hand || !R) return;
     lastPoke = Date.now();
-    if (hand.getAttribute('data-state') === 'grab') {
-      // Let go: the R squashes in like a soft balloon and springs back, and the hand slides down to peek.
-      R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish');
-      setHand('peek'); scheduleIdle();
-    } else {
-      // Reach up and grab the R again.
-      setHand('grab'); play('squeak'); play('giggle', 0.36);
-      clearTimeout(grabT); grabT = setTimeout(function () { R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish'); }, 10);
-      scheduleIdle();
-    }
+    if (hand.getAttribute('data-state') === 'grab') { letGo(); return; }
+    // Reach up and grab the R, squeak and giggle, then retreat back down on its own.
+    setHand('grab'); play('squeak'); play('giggle', 0.36);
+    clearTimeout(grabT); grabT = setTimeout(function () { R.classList.remove('squish'); void R.offsetWidth; R.classList.add('squish'); }, 10);
+    clearTimeout(backT); backT = setTimeout(letGo, HOLD_MS);
+    scheduleIdle();
   }
   function initHand() {
     var R = doc.getElementById('logoR'); if (!R || hand) return;
@@ -1111,8 +1136,10 @@ header.strip { overflow: hidden; }
       if (e.clientX >= b.left - 14 && e.clientX <= b.right + 14 && e.clientY >= b.top - 12) poke();
     });
     R.addEventListener('animationend', function (e) { if (e.animationName === 'fx-squish') R.classList.remove('squish'); });
-    // Rise up and grab the R shortly after the page opens (silently: no sound before the first tap).
-    setTimeout(function () { setHand('grab'); scheduleIdle(); }, still() ? 0 : 700);
+    // The hand starts down, with only its fingertips peeking above the strip, until it is tapped.
+    // (Placed again once the logo font has loaded, so the fingertips sit right.)
+    setTimeout(function () { if (hand.getAttribute('data-state') !== 'grab') setHand('peek'); scheduleIdle(); }, still() ? 0 : 300);
+    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () { if (hand && hand.getAttribute('data-state') === 'peek') setHand('peek'); });
     doc.addEventListener('visibilitychange', function () { if (doc.hidden) { clearTimeout(idleT); clearTimeout(drumT); hand.classList.remove('drum', 'drum-fast'); } else scheduleIdle(); });
     // Any use of the app counts as not idle.
     ['pointerdown', 'keydown'].forEach(function (ev) { doc.addEventListener(ev, function () { if (hand && hand.classList.contains('drum')) scheduleIdle(); else if (Date.now() - lastPoke > 5000) { lastPoke = Date.now(); scheduleIdle(); } }, true); });
@@ -1379,7 +1406,7 @@ header.strip { overflow: hidden; }
       oldSheet.querySelectorAll('input, select').forEach(function (el) { if (el.id || el.name) kept.push([el.form ? (el.form.id || el.form.getAttribute('data-id')) : '', el.id, el.name, el.value]); });
     }
     s.fresh = false;
-    layer.innerHTML = '<div class="backdrop" data-a="close-bg"><div class="sheet" data-sig="' + esc(sig) + '" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><div class="top"><h2>' + esc(title) + '</h2><button class="x" data-a="close" aria-label="Close">×</button></div>' + body + '</div></div>';
+    layer.innerHTML = '<div class="backdrop" data-a="close-bg"><div class="sheet" data-sig="' + esc(sig) + '" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><div class="top"><h2>' + esc(title) + '</h2><button class="x" data-a="close" aria-label="Close">×</button></div>' + body + '<div class="btns sheet-foot"><button class="btn wide close-foot" data-a="close">Close</button></div></div></div>';
     var ns = layer.querySelector('.sheet'); ns.scrollTop = y;
     kept.forEach(function (k) { var el = k[1] ? ns.querySelector('#' + CSS.escape(k[1])) : null; if (!el && k[2]) { var f = k[0] ? (ns.querySelector('#' + CSS.escape(k[0])) || ns.querySelector('[data-id="' + CSS.escape(k[0]) + '"]')) : ns; el = f && f.querySelector('[name="' + k[2] + '"]'); } if (el && el.value !== k[3] && [].some.call(el.options || [{ value: k[3] }], function (o) { return o.value === k[3]; })) el.value = k[3]; });
     if (s.type === 'scan') startScan();
@@ -1395,7 +1422,7 @@ header.strip { overflow: hidden; }
     }).join('') + '</div>';
     h += '<div class="totline lv-' + lv + '"><span>' + items.length + ' item' + (items.length === 1 ? '' : 's') + (lim ? ' · limit ' + G.money(lim) : '') + '</span><span class="dollar">' + G.money(t.cart) + '</span></div>';
     if (t.cartUnpriced) h += '<div class="note">' + t.cartUnpriced + ' item' + (t.cartUnpriced === 1 ? ' has' : 's have') + ' no price yet. Tap ' + (t.cartUnpriced === 1 ? 'it' : 'them') + ' to add the price.</div>';
-    h += '<div class="btns"><button class="btn go wide" data-a="complete">Shopping complete</button></div>';
+    h += '<div class="btns"><button class="btn go wide" data-a="complete">Shopping complete</button><button class="btn danger wide" data-a="emptycart">Empty cart (' + items.length + ')</button></div>';
     return h;
   }
   function trashSheet() {
@@ -1550,6 +1577,14 @@ header.strip { overflow: hidden; }
         var n = G.items(r, 'trash').length;
         if (!confirm('Empty the trash? ' + n + ' item' + (n === 1 ? '' : 's') + ' will be gone for good.')) break;
         act(G.emptyTrash(r), 'Trash emptied'); break;
+      }
+      case 'emptycart': {
+        var nc = G.items(r, 'cart').length; if (!nc) break;
+        if (!confirm('Are you sure you want to empty the cart? ' + nc + ' item' + (nc === 1 ? '' : 's') + ' will go to the trash. You can bring ' + (nc === 1 ? 'it' : 'them') + ' back from the trash until it is emptied.')) break;
+        ui.cartOpen = '';
+        act(G.emptyCart(r), 'Cart emptied: ' + nc + ' item' + (nc === 1 ? '' : 's') + ' in the trash', true);
+        fxSafe(function () { FX.moved('trash'); });
+        break;
       }
       case 'complete': openSheet({ type: 'complete', store: lastStore().store, branch: lastStore().branch }); break;
       case 'scan': if (ui.sheet && ui.sheet.type === 'edit') { var bcIn = $('eBc'); var cur = Object.assign({}, ui.sheet); openSheet({ type: 'scan', back: cur }); } else openSheet({ type: 'scan', back: null }); break;
