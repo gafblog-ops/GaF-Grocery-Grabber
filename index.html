@@ -1656,8 +1656,10 @@ header.strip { overflow: hidden; }
       var ch = G.addItem(r, { name: name, qty: f.elements.qty.value, price: f.elements.price.value, cat: f.elements.cat.value || undefined, barcode: ui.addBarcode });
       var it = ch[Object.keys(ch).filter(function (k) { return k.slice(0, 2) === 'i:'; })[0]];
       ui.addBarcode = ''; f.reset();
+      // Done adding: let go of the form so the keyboard and the Item suggestion list close (iOS reopens them on refocus).
+      var ae = document.activeElement; if (ae && ae.form === f && ae.blur) ae.blur();
       act(ch, it.name + ' added to ' + it.cat, true);
-      var nf = $('addForm'); if (nf) { nf.elements.name.value = ''; nf.elements.qty.value = ''; nf.elements.price.value = ''; nf.elements.cat.value = ''; addHint(); nf.elements.name.focus(); }
+      var nf = $('addForm'); if (nf) { nf.elements.name.value = ''; nf.elements.qty.value = ''; nf.elements.price.value = ''; nf.elements.cat.value = ''; addHint(); var fa = document.activeElement; if (fa && fa.form === nf && fa.blur) fa.blur(); }
       var row = document.querySelector('.item[data-id="' + it.id + '"]'); if (row) row.classList.add('flash');
       return;
     }
