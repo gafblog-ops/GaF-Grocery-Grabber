@@ -281,10 +281,54 @@ header.strip { overflow: hidden; }
   .fx-hand, .fx-hand .fg { transition: none; }
   .fx-hand.drum .fg, .logo .r.squish, .cart.bump, .trash.fx-gulp { animation: none; }
 }
+/* ---------- settings cog and category order ---------- */
+.cog { flex: none; width: 38px; height: 38px; margin-right: 8px; padding: 5px; border: 2px solid var(--yellow); border-radius: 50%; background: #000; color: var(--yellow); display: inline-flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; transition: transform .35s ease; }
+.cog svg { width: 100%; height: 100%; display: block; }
+.cog:hover, .cog:focus-visible { transform: rotate(60deg); outline: none; box-shadow: 0 0 0 2px #fff; }
+.cog:active { transform: rotate(90deg) scale(.92); }
+@media (max-width: 380px) { .cog { width: 32px; height: 32px; margin-right: 5px; padding: 4px; } }
+.ord { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ord li { display: flex; align-items: center; gap: 8px; background: #fff; border: 2px solid var(--ink); border-left: 10px solid var(--cc); border-radius: 10px; padding: 4px 4px 4px 8px; min-height: 48px; }
+.ord li.moved { animation: ord-flash .6s ease; }
+@keyframes ord-flash { 0% { background: var(--yellow); } 100% { background: #fff; } }
+.ord .pos { flex: none; width: 24px; font: 400 20px/1 var(--comic); text-align: center; }
+.ord .nm { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.ord .nm small { display: block; font-weight: 500; color: #666; font-size: 12px; }
+.ord .mv { flex: none; width: 44px; height: 40px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); font-size: 18px; line-height: 1; padding: 0; box-shadow: 2px 2px 0 var(--ink); }
+.ord .mv:disabled { opacity: .3; box-shadow: none; }
+.ord .mv:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+.setmenu { display: grid; gap: 12px; }
+.settile { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #fff; border: 3px solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); padding: 12px; min-height: 72px; color: var(--ink); font: inherit; cursor: pointer; }
+.settile:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+.settile .ti { flex: none; width: 46px; height: 46px; border: 3px solid var(--ink); border-radius: 50%; background: var(--tc); display: grid; place-items: center; font: 400 28px/1 var(--comic); }
+.settile .tt { flex: 1; min-width: 0; }
+.settile .tt b { display: block; font: 400 23px/1.05 var(--comic); letter-spacing: 1px; }
+.settile .tt small { display: block; color: #555; font-size: 14px; margin-top: 3px; }
+.settile .go { flex: none; font: 400 30px/1 var(--comic); }
+.back-row { margin: 0 0 12px; }
+.sheet .back-row:last-child { margin: 12px 0 0; }
+.help { font-size: 16px; line-height: 1.5; }
+.help-intro { margin: 0 0 8px; font-weight: 700; }
+.help-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.help-toc button { border: 2px solid var(--ink); border-radius: 999px; background: #FFD60A; box-shadow: 2px 2px 0 var(--ink); padding: 7px 11px; font-family: inherit; font-weight: 700; font-size: 14px; line-height: 1.2; color: var(--ink); min-height: 36px; }
+.help-toc button:active { transform: translate(2px, 2px); box-shadow: none; }
+.help-sec h3 { display: flex; align-items: center; gap: 8px; }
+.help-sec .hn { flex: none; width: 30px; height: 30px; border: 2px solid var(--ink); border-radius: 50%; background: #FF4F9A; color: #fff; display: grid; place-items: center; font-size: 17px; }
+.help-sec ul, .help-sec ol { margin: 0; padding-left: 20px; }
+.help-sec li { margin: 0 0 8px; }
+.help-sec p { margin: 8px 0 0; }
+.help-sec .totop { display: block; margin: 10px 0 0 auto; font-size: 14px; }
+.lvkey { display: grid; gap: 6px; margin-top: 8px; font-size: 15px; }
+.lvkey > span { display: flex; align-items: center; gap: 8px; }
+.lvkey .k { flex: none; width: 74px; text-align: center; }
+.lvkey .k { border: 2px solid var(--ink); border-radius: 8px; padding: 1px 8px; font-weight: 800; color: #000; }
+.lvkey .k.green { background: var(--ok); color: #fff; } .lvkey .k.amber { background: var(--amber); } .lvkey .k.orange { background: var(--warn); } .lvkey .k.red { background: var(--over); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .settile:active, .help-toc button:active { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cog, .cog:hover, .cog:active { transition: none; transform: none; } .ord li.moved { animation: none; } }
 </style>
 </head>
 <body>
-<header class="strip"><div class="logo" aria-label="GaF Grocery Grabber"><span class="g1">G</span><span class="g2">a</span><span class="g3">F</span><span class="w2">GROCERY</span><span class="w3">GRABBE<span class="r" id="logoR">R</span></span></div><div class="ver" id="ver">v2</div></header>
+<header class="strip"><button type="button" class="cog hide" id="cogBtn" data-a="settings" aria-label="Settings: category order and help" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M10.3 1.5h3.4l.5 2.6a8 8 0 0 1 2.1 1.2l2.5-.9 1.7 2.9-2 1.8a8 8 0 0 1 0 2.4l2 1.8-1.7 2.9-2.5-.9a8 8 0 0 1-2.1 1.2l-.5 2.6h-3.4l-.5-2.6a8 8 0 0 1-2.1-1.2l-2.5.9-1.7-2.9 2-1.8a8 8 0 0 1 0-2.4l-2-1.8 1.7-2.9 2.5.9a8 8 0 0 1 2.1-1.2zM12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z"/></svg></button><div class="logo" aria-label="GaF Grocery Grabber"><span class="g1">G</span><span class="g2">a</span><span class="g3">F</span><span class="w2">GROCERY</span><span class="w3">GRABBE<span class="r" id="logoR">R</span></span></div><div class="ver" id="ver">v2</div></header>
 <main id="app"></main>
 <div id="layer"></div>
 <nav class="tabs hide" id="tabs"></nav>
@@ -295,6 +339,7 @@ header.strip { overflow: hidden; }
      i:<id>   an item  {id,name,qty,price,cat,state:'list'|'cart'|'trash',from,order,barcode,added}
      t:<id>   a finished trip {id,date,done,store,branch,total,limit,items:[{name,qty,price,cat,barcode,line}]}
      s:limit  the spending limit (number) or nothing
+     s:catOrder  this person's own order of the categories (array of names) or nothing for the standard order
      st:<key> a store {name,branches:[...],custom}
      c:<key>  the category last chosen for an item name
      b:<key>  the barcode last recorded for an item name */
@@ -378,11 +423,34 @@ header.strip { overflow: hidden; }
     return out;
   }
   function catOf(it) { return CATEGORIES.indexOf(it.cat) >= 0 ? it.cat : 'Misc'; }
-  /* The shopping list in store order: [{cat, items:[...]}], every category included (empty ones too). */
+  /* This person's category order: their saved order (unknown names dropped, repeats ignored),
+     then any category it doesn't mention in the standard order, so a new category never goes missing. */
+  function catOrder(recs) {
+    var saved = recs && recs['s:catOrder'], out = [], seen = {};
+    if (Array.isArray(saved)) saved.forEach(function (c) { if (CATEGORIES.indexOf(c) >= 0 && !seen[c]) { seen[c] = 1; out.push(c); } });
+    CATEGORIES.forEach(function (c) { if (!seen[c]) out.push(c); });
+    return out;
+  }
+  function isDefaultOrder(order) { return order.length === CATEGORIES.length && order.every(function (c, i) { return c === CATEGORIES[i]; }); }
+  /* Save a whole new order. The standard order is stored as nothing, so it keeps following the app's own order. */
+  function setCatOrder(recs, order) {
+    if (order == null) return { 's:catOrder': null };
+    var clean = catOrder({ 's:catOrder': order });
+    return { 's:catOrder': isDefaultOrder(clean) ? null : clean };
+  }
+  /* Move one category up (-1) or down (+1), or to the very top ('top') or bottom ('bottom'). */
+  function moveCat(recs, cat, how) {
+    var o = catOrder(recs), i = o.indexOf(cat); if (i < 0) return {};
+    var j = how === 'top' ? 0 : how === 'bottom' ? o.length - 1 : i + (+how || 0);
+    j = Math.max(0, Math.min(o.length - 1, j)); if (j === i) return {};
+    o.splice(i, 1); o.splice(j, 0, cat);
+    return setCatOrder(recs, o);
+  }
+  /* The shopping list in the person's store order: [{cat, items:[...]}], every category included (empty ones too). */
   function listGroups(recs) {
     var by = {}; CATEGORIES.forEach(function (c) { by[c] = []; });
     items(recs, 'list').forEach(function (it) { by[catOf(it)].push(it); });
-    return CATEGORIES.map(function (c) { return { cat: c, items: by[c] }; });
+    return catOrder(recs).map(function (c) { return { cat: c, items: by[c] }; });
   }
   function totals(recs) {
     var t = { list: 0, cart: 0, trash: 0, listCount: 0, cartCount: 0, trashCount: 0, cartUnpriced: 0, listUnpriced: 0 };
@@ -610,7 +678,7 @@ header.strip { overflow: hidden; }
     });
     var popular = Object.keys(byItem).map(function (k) { var r = byItem[k]; return { name: r.name, cat: r.cat, times: r.times, qty: Math.round(r.qty * 1000) / 1000, spent: r.spent / 100, avg: r.priced ? Math.round(r.priceSum / r.priced) / 100 : null, last: r.last, lastDate: r.lastDate, low: r.low, high: r.high }; });
     popular.sort(function (a, b) { return b.times - a.times || b.qty - a.qty || b.spent - a.spent || (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1); });
-    var cats = CATEGORIES.filter(function (c) { return byCat[c]; }).map(function (c) { return { cat: c, count: byCat[c].count, spent: byCat[c].spent / 100 }; });
+    var cats = catOrder(recs).filter(function (c) { return byCat[c]; }).map(function (c) { return { cat: c, count: byCat[c].count, spent: byCat[c].spent / 100 }; });
     var storesOut = Object.keys(byStore).map(function (k) { var s = byStore[k]; return { store: s.store, branch: s.branch, name: s.name, trips: Object.keys(s.trips).length, spent: s.spent / 100 }; });
     storesOut.sort(function (a, b) { return b.spent - a.spent; });
     var nTrips = Object.keys(tripSet).length;
@@ -641,7 +709,7 @@ header.strip { overflow: hidden; }
   var api = {
     CATEGORIES: CATEGORIES, DEFAULT_STORES: DEFAULT_STORES, nameKey: nameKey, storeKey: storeKey, uid: uid,
     parseMoney: parseMoney, parseQty: parseQty, money: money, cents: cents, lineCents: lineCents, qtyText: qtyText,
-    guessCategory: guessCategory, items: items, catOf: catOf, listGroups: listGroups, totals: totals, limit: limit, budgetLevel: budgetLevel,
+    guessCategory: guessCategory, items: items, catOf: catOf, catOrder: catOrder, setCatOrder: setCatOrder, moveCat: moveCat, listGroups: listGroups, totals: totals, limit: limit, budgetLevel: budgetLevel,
     addItem: addItem, editItem: editItem, moveItem: moveItem, placeInList: placeInList, emptyTrash: emptyTrash, emptyCart: emptyCart, deleteItem: deleteItem, setLimit: setLimit,
     stores: stores, branches: branches, rememberStore: rememberStore, canonicalStore: canonicalStore,
     todayISO: todayISO, completeTrip: completeTrip, trips: trips, purchases: purchases, lastPrice: lastPrice, knownNames: knownNames, findByBarcode: findByBarcode,
@@ -1217,6 +1285,7 @@ header.strip { overflow: hidden; }
 
   // ---------- rendering ----------
   function render(forceSheet) {
+    var cog = $('cogBtn'); if (cog) cog.classList.toggle('hide', !(configured && eng.signedIn()));
     if (!configured) { tabsEl.classList.add('hide'); app.innerHTML = setupHTML(); return; }
     if (!eng.signedIn()) { tabsEl.classList.add('hide'); var tr = document.querySelector('.trash'); app.innerHTML = signInHTML(); return; }
     tabsEl.classList.remove('hide');
@@ -1279,7 +1348,7 @@ header.strip { overflow: hidden; }
       '<button class="grab" data-a="grab" data-v="' + esc(it.id) + '" aria-label="Put ' + esc(it.name) + ' in the cart">' + IC.cart + '</button></div>';
   }
   function catOptions(sel, auto) {
-    return (auto ? '<option value="">' + esc(auto) + '</option>' : '') + G.CATEGORIES.map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('');
+    return (auto ? '<option value="">' + esc(auto) + '</option>' : '') + G.catOrder(R()).map(function (c) { return '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('');
   }
   function addHTML() {
     var names = G.knownNames(R());
@@ -1379,6 +1448,7 @@ header.strip { overflow: hidden; }
     var n = G.trips(R()).length;
     return '<div class="panel"><h3>Your account</h3><p>Signed in as <b>' + esc(eng.email()) + '</b>.</p><p><span class="sync-dot ' + eng.status.state + '" id="syncDot"></span><span id="syncTxt">' + esc(statusText()) + '</span></p>' +
       '<div class="btns"><button class="btn small" data-a="sheet" data-v="password">Change password</button><button class="btn small" data-a="signout">Sign out</button></div></div>' +
+      '<div class="panel"><h3>Category order</h3><p>Set the order the categories appear in your list, to match the way you walk the store.</p><div class="btns"><button class="btn small" data-a="sheet" data-v="catorder">Change category order</button></div></div>' +
       '<div class="panel"><h3>Export</h3><p>Every item you\'ve bought, with date, store, branch, price and barcode, as a spreadsheet file.</p><div class="btns"><button class="btn small" data-a="csv"' + (n ? '' : ' disabled') + '>Export history (CSV)</button></div></div>' +
       '<div class="panel"><h3>Share with friends</h3><p>Send friends this page\'s link. They tap <b>Create an account</b> and get their own private list, limit and history. Nobody can see anyone else\'s.</p></div>' +
       '<div class="panel"><h3>Sounds</h3><div class="snd"><p style="margin:0">Whoosh, cart, cha-ching, paper scrunch and the logo hand\'s squeak and giggle.</p><button class="btn small' + (FX && FX.sound() ? ' go' : '') + '" data-a="sound" aria-pressed="' + !!(FX && FX.sound()) + '">' + (FX && FX.sound() ? 'Sound on' : 'Sound off') + '</button></div></div>' +
@@ -1396,6 +1466,9 @@ header.strip { overflow: hidden; }
     else if (s.type === 'complete') { title = 'Shopping complete'; body = completeSheet(s); }
     else if (s.type === 'edit') { var it = R()['i:' + s.id]; if (!it) { closeSheet(); return; } title = 'Edit item'; body = editSheet(it); }
     else if (s.type === 'limit') { title = 'Spending limit'; body = limitSheet(); }
+    else if (s.type === 'settings') { title = 'Settings'; body = settingsSheet(); }
+    else if (s.type === 'catorder') { title = 'Category order'; body = catOrderSheet(); }
+    else if (s.type === 'help') { title = 'How to use it'; body = helpSheet(); }
     else if (s.type === 'scan') { title = 'Scan a barcode'; body = scanSheet(s); }
     else if (s.type === 'ph') { title = s.name; body = phSheet(s.name); }
     else if (s.type === 'password') { title = s.recovery ? 'Choose a new password' : 'Change password'; body = pwSheet(); }
@@ -1460,6 +1533,50 @@ header.strip { overflow: hidden; }
       '<div class="err" id="eErr" role="alert" style="color:var(--over);font-weight:700"></div>' +
       '<button class="btn pri wide" type="submit">Save</button>' +
       '<div class="btns" style="margin-top:0"><button type="button" class="btn go" data-a="mv" data-id="' + esc(it.id) + '" data-v="cart">Into cart</button><button type="button" class="btn danger" data-a="mv" data-id="' + esc(it.id) + '" data-v="trash">Trash</button></div></form>';
+  }
+  /* Settings (the cog): a small menu. Category order and the Help guide each open their own card. */
+  function settingsSheet() {
+    return '<div class="setmenu">' +
+      '<button type="button" class="settile" data-a="sheet" data-v="catorder" style="--tc:#FFD60A"><span class="ti" aria-hidden="true">↕</span><span class="tt"><b>Category order</b><small>Put the categories in the order you walk the store.</small></span><span class="go" aria-hidden="true">›</span></button>' +
+      '<button type="button" class="settile" data-a="sheet" data-v="help" style="--tc:#5EC8FF"><span class="ti" aria-hidden="true">?</span><span class="tt"><b>Help: how to use it</b><small>A quick guide to every part of the app.</small></span><span class="go" aria-hidden="true">›</span></button>' +
+      '</div>';
+  }
+  function backToSettings() { return '<div class="btns back-row"><button type="button" class="btn small" data-a="settings">‹ Back to Settings</button></div>'; }
+  /* Help guide. Plain scrolling page with jump buttons, so a re-render (sync) keeps your place. */
+  var HELP = [
+    ['quick', 'Quick start', '<ol><li>Type what you need in <b>Item</b> and tap <b>Add to list</b>. It drops into the right category.</li><li>In the store, tap the little cart button on each item as it goes in your trolley.</li><li>At the checkout, open the cart and tap <b>Shopping complete</b>.</li></ol>'],
+    ['add', 'Adding items', '<ul><li><b>Category sorts itself.</b> Leave Category on <b>Auto</b> and the app picks one (it shows its guess, like "Auto: Dairy"). Pick a different one and it remembers that for next time.</li><li><b>Suggestions while you type.</b> Start typing and names you have used before pop up. Tap one to fill it in. They only show while you are typing, not after you add.</li><li><b>Qty</b> is how many. Leave it empty for 1. Halves are fine, like 1.5.</li><li><b>Price each</b> is the price for one. The app multiplies it by the qty.</li><li><b>No price yet? Leave it blank.</b> The item shows "Add price". Fill it in at the store: tap the item on the list, or tap it in the cart.</li><li><b>Last price.</b> If you have bought it before, it shows what you last paid and where.</li><li><b>Put the size in the name</b>, like "Milk 2L" or "Greek yoghurt 1kg", so you buy the right one and prices compare fairly.</li><li><b>Change anything later.</b> Tap an item to edit its name, qty, price, category or barcode.</li></ul>'],
+    ['scan', 'Scanning barcodes', '<ul><li>Tap the barcode button next to <b>Item</b> and point the camera at the barcode. You can also type the number under the barcode.</li><li><b>It learns your barcodes.</b> The first time, type the item name and add it. After that, scanning the same barcode fills in the name, category and last price for you.</li><li>It does <b>not</b> look anything up online, so it won\'t know prices or names of things you haven\'t saved.</li><li>To add a barcode to an item already on your list, tap the item and scan in the Barcode box.</li><li>The camera needs the live https site, and your OK to use the camera.</li></ul>'],
+    ['move', 'List, cart and trash', '<ul><li><b>Into the cart:</b> tap the cart button on the right of an item.</li><li><b>Drag it:</b> on the iPhone, press and hold an item, then slide it onto the cart, the bin or another category. On the Mac, click and drag.</li><li><b>Change category:</b> drag an item into another category and it stays there next time.</li><li><b>Changed your mind?</b> Tap <b>Undo</b> on the message at the bottom, or open the cart and tap an item for <b>Back to list</b> or <b>Trash</b>.</li></ul>'],
+    ['totals', 'Cart total and the List amount', '<ul><li><b>The cart total</b> (in the black box on the cart) is what is in your trolley now.</li><li><b>List</b>, under the limit bar, is roughly what is still on your list. Items with no price yet show as "+ unpriced".</li><li><b>Spending limit:</b> tap <b>Set a spending limit</b> to choose an amount for this shop. The bar shows how much is left.</li></ul><div class="lvkey"><span><span class="k green">Green</span>under 75% of the limit</span><span><span class="k amber">Yellow</span>from 75%</span><span><span class="k orange">Orange</span>from 90%</span><span><span class="k red">Red</span>over the limit</span></div>'],
+    ['trash', 'Empty cart and the trash', '<ul><li><b>Empty cart</b> (in the cart) asks first, then moves everything to the trash, not gone.</li><li>Open the <b>bin</b> at the bottom of your list to see the trash. Tap an item for <b>Back to list</b> or <b>Back to cart</b>.</li><li>Nothing is gone for good until you tap <b>Empty trash</b>, or finish a shop with <b>Shopping complete</b>, which empties the trash.</li></ul>'],
+    ['done', 'Shopping complete', '<ul><li>Open the cart and tap <b>Shopping complete</b>.</li><li>Choose the <b>store</b>, then the <b>branch</b>. A new store or branch is typed once (use <b>Other…</b> or <b>New branch…</b>) and remembered after that.</li><li>Check the date and tap <b>Complete</b>. The cart goes into your history with its prices, and anything still on your list stays there for next time.</li></ul>'],
+    ['hist', 'History', '<ul><li><b>Trips</b> lists each shop with the store, date and total. Tap one to see what you bought. <b>Add all to list again</b> puts the lot back on your list.</li><li><b>Every item</b> lets you search and filter by category, store and time.</li><li>Tap any item to see its <b>price history</b>: what you paid, when and where.</li></ul>'],
+    ['rep', 'Reports and export', '<ul><li><b>Reports</b> shows trips, total spent and spend per trip, your most popular items, spending by category and by store. Filter by time, category and store.</li><li><b>Export:</b> in the <b>More</b> tab, tap <b>Export history (CSV)</b> for a spreadsheet of everything you\'ve bought, with date, store, branch, price and barcode.</li></ul>'],
+    ['order', 'Changing category order', '<ul><li>Tap the <b>cog</b>, then <b>Category order</b> (or <b>Change category order</b> in More).</li><li>Use ▲ and ▼ to move a category. Your list and menus follow straight away.</li><li><b>Reset to the standard order</b> puts it back. Items always stay in their own category.</li></ul>'],
+    ['snd', 'Sounds', '<ul><li>Turn sounds on or off in the <b>More</b> tab. The app remembers your choice on each device.</li><li>On the iPhone, sounds start after your first tap. Check the silent switch is off.</li><li>Tap the hand by the logo for a squeak and a giggle.</li></ul>'],
+    ['home', 'Put it on your iPhone home screen', '<ol><li>Open the app\'s web address in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (the square with an arrow pointing up). On newer iPhones it may be under the <b>•••</b> button.</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol><p>It then opens from its own icon, like an app.</p>'],
+    ['sync', 'Syncing, devices and accounts', '<ul><li>Sign in with the same email on your iPhone and your Mac, and your list, cart, trash, history, limit and category order follow you.</li><li><b>Offline?</b> Changes are kept on the device and save when you\'re back online. The <b>More</b> tab shows whether everything is saved.</li><li><b>Friends</b> tap <b>Create an account</b> on the same link and get their own private list, limit and history. Nobody can see anyone else\'s.</li></ul>']
+  ];
+  function helpSheet() {
+    return backToSettings() +
+      '<div class="help"><p class="help-intro">Tap a topic to jump to it.</p><nav class="help-toc" aria-label="Help topics">' + HELP.map(function (h) { return '<button type="button" data-a="helpgo" data-v="' + h[0] + '">' + h[1] + '</button>'; }).join('') + '</nav>' +
+      HELP.map(function (h, i) { return '<section class="panel help-sec" id="help-' + h[0] + '"><h3><span class="hn">' + (i + 1) + '</span>' + h[1] + '</h3>' + h[2] + '<button type="button" class="link totop" data-a="helpgo" data-v="top">Back to topics ▲</button></section>'; }).join('') + '</div>';
+  }
+  /* Category order: this person's own order. It is saved with their account, so it follows them to every device. */
+  function catOrderSheet() {
+    var r = R(), order = G.catOrder(r), counts = {}, custom = Array.isArray(r['s:catOrder']);
+    G.items(r, 'list').forEach(function (it) { var c = G.catOf(it); counts[c] = (counts[c] || 0) + 1; });
+    var last = order.length - 1;
+    return '<div class="panel"><h3>Category order</h3><p class="muted" style="margin:0 0 10px">Put the categories in the order you walk the store. Your list and the category menus follow this order. It only changes the order: every item stays in its own category. This is your own setting, so friends with their own accounts keep theirs.</p>' +
+      '<ol class="ord" id="ordList">' + order.map(function (c, i) {
+        var n = counts[c] || 0, nm = c === 'Misc' ? 'Misc (not sorted)' : c;
+        return '<li data-cat="' + esc(c) + '" style="--cc:' + CAT_COL[c] + '"><span class="pos">' + (i + 1) + '</span><span class="nm">' + esc(nm) + (n ? '<small>' + n + ' on your list</small>' : '') + '</span>' +
+          '<button type="button" class="mv" data-a="catmv" data-id="' + esc(c) + '" data-v="-1" aria-label="Move ' + esc(nm) + ' up"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+          '<button type="button" class="mv" data-a="catmv" data-id="' + esc(c) + '" data-v="1" aria-label="Move ' + esc(nm) + ' down"' + (i === last ? ' disabled' : '') + '>▼</button></li>';
+      }).join('') + '</ol>' +
+      '<div class="btns"><button type="button" class="btn small" data-a="catreset"' + (custom ? '' : ' disabled') + '>Reset to the standard order</button></div>' +
+      '<p class="tiny muted" style="margin:6px 0 0">' + (custom ? 'Using your own order.' : 'Using the standard order.') + ' Changes save straight away.</p></div>' + backToSettings();
   }
   function limitSheet() {
     var l = G.limit(R());
@@ -1558,6 +1675,29 @@ header.strip { overflow: hidden; }
       case 'undo': if (undoStack) { eng.change(undoStack); undoStack = null; render(true); var t = document.querySelector('.toast'); if (t) t.remove(); } break;
       case 'sheet': openSheet({ type: v }); break;
       case 'limit': openSheet({ type: 'limit', focus: '#lVal' }); break;
+      case 'settings': openSheet({ type: 'settings' }); break;
+      case 'helpgo': {
+        var hs = layer.querySelector('.sheet'), tg = v === 'top' ? layer.querySelector('.help-toc') : layer.querySelector('#help-' + v);
+        if (hs && tg) { var off = tg.getBoundingClientRect().top - hs.getBoundingClientRect().top - (layer.querySelector('.sheet .top').offsetHeight || 0) - 8; hs.scrollTo({ top: hs.scrollTop + off, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+        break;
+      }
+      case 'catmv': {
+        var mc = el.getAttribute('data-id'), ch3 = G.moveCat(r, mc, v); if (!Object.keys(ch3).length) break;
+        act(ch3);
+        var li = layer.querySelector('.ord li[data-cat="' + CSS.escape(mc) + '"]');
+        if (li) {
+          li.classList.add('moved');
+          var b = li.querySelector('.mv[data-v="' + v + '"]'); if (!b || b.disabled) b = li.querySelector('.mv:not([disabled])');
+          if (b) b.focus({ preventScroll: true });
+          var sh = layer.querySelector('.sheet'); if (sh) { var lb = li.getBoundingClientRect(), sb = sh.getBoundingClientRect(); if (lb.top < sb.top + 70) sh.scrollTop -= sb.top + 70 - lb.top; else if (lb.bottom > sb.bottom - 10) sh.scrollTop += lb.bottom - sb.bottom + 10; }
+        }
+        break;
+      }
+      case 'catreset': {
+        if (!Array.isArray(r['s:catOrder'])) break;
+        if (!confirm('Put the categories back in the standard order?')) break;
+        act(G.setCatOrder(r, null), 'Back to the standard order', true); break;
+      }
       case 'nolimit': act(G.setLimit(r, null), 'Limit removed'); closeSheet(); break;
       case 'edit': openSheet({ type: 'edit', id: v }); break;
       case 'grab': { it = r['i:' + v]; if (!it || it.state !== 'list') break; var from = rowRect(v); act(G.moveItem(r, v, 'cart'), it.name + ' in the cart' + (it.price != null ? ' +' + G.money(G.lineCents(it) / 100) : ''), true); fxCart(it.name, from); break; }
