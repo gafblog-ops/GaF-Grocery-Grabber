@@ -325,6 +325,32 @@ header.strip { overflow: hidden; }
 .lvkey .k.green { background: var(--ok); color: #fff; } .lvkey .k.amber { background: var(--amber); } .lvkey .k.orange { background: var(--warn); } .lvkey .k.red { background: var(--over); color: #fff; }
 @media (prefers-reduced-motion: reduce) { .settile:active, .help-toc button:active { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .cog, .cog:hover, .cog:active { transition: none; transform: none; } .ord li.moved { animation: none; } }
+.rc-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.rc-pick { flex-direction: column; } .rc-pick .btn { width: 100%; }
+.rc-prog { height: 16px; border: 2.5px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; margin: 8px 0; }
+.rc-prog i { display: block; height: 100%; background: var(--cyan); transition: width .3s; }
+.rc-err { color: var(--over); font-weight: 700; margin: 8px 0; }
+.rc-warn { background: #FFF3C4; border: 2px solid var(--ink); border-radius: 10px; padding: 8px 10px; font-weight: 700; }
+.rc-h { margin: 16px 2px 6px; }
+.rc-row { border: 2.5px solid var(--ink); border-radius: 12px; background: #fff; padding: 10px; margin: 0 0 10px; display: grid; gap: 8px; opacity: .78; }
+.rc-row.on { opacity: 1; background: #F2FFE9; box-shadow: 3px 3px 0 var(--ink); }
+.rc-row.add.on { background: #E6F8FF; }
+.rc-top { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; }
+.rc-tick { display: flex; gap: 10px; align-items: flex-start; flex: 1; min-width: 0; cursor: pointer; }
+.rc-tick input { width: 24px; height: 24px; flex: none; margin: 1px 0 0; accent-color: #111; }
+.rc-tick span { min-width: 0; overflow-wrap: anywhere; } .rc-tick small { display: block; color: #555; font-size: 13px; }
+.rc-conf { flex: none; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 2px 7px; border: 2px solid var(--ink); border-radius: 999px; white-space: nowrap; }
+.rc-conf.ok { background: var(--lime); } .rc-conf.chk { background: var(--yellow); } .rc-conf.no { background: #E5E5E5; }
+.rc-raw { font: 13px/1.35 ui-monospace, Menlo, monospace; background: #F6F2E4; border-radius: 8px; padding: 5px 8px; overflow-wrap: anywhere; }
+.rc-raw small { font-family: inherit; color: #666; }
+.rc-note { margin: 0; }
+.rc-nums { display: flex; gap: 8px; align-items: flex-end; } .rc-nums .f { flex: 1; min-width: 0; }
+.rc-each { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; padding-bottom: 12px; color: #333; }
+.rc-skip, .rc-text { margin: 10px 2px; } .rc-skip summary, .rc-text summary { font-weight: 800; cursor: pointer; min-height: 32px; }
+.rc-text textarea { min-height: 150px; font: 14px/1.4 ui-monospace, Menlo, monospace; resize: vertical; }
+.rc-go { margin-top: 12px; position: sticky; bottom: 0; background: linear-gradient(transparent, #fff 30%); padding-top: 10px; }
+.rc-tag { display: inline-block; padding: 0 5px; border-radius: 5px; background: var(--lime); color: #000; font-size: 11px; font-weight: 800; }
+.rc-done { margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -717,6 +743,298 @@ header.strip { overflow: hidden; }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GG = api;
+})(typeof window !== 'undefined' ? window : this);
+</script>
+<script>/* GaF Grocery Grabber receipt reading.
+   Turns the text read off a shop receipt into item lines, matches them to the items of one finished trip,
+   and builds the change the person approves. Nothing in here saves anything: the app only saves what
+   applyReceipt returns, and only after the Approve button.
+     ra:<storeKey>|<receipt words>  the item name a receipt line was approved as, at that store (learned aliases) */
+(function (root) {
+  'use strict';
+  var G = root.GG || (typeof require !== 'undefined' ? require('./core.js') : null);
+
+  function tidy(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  function r2(n) { return Math.round(n * 100) / 100; }
+  function r4(n) { return Math.round(n * 10000) / 10000; }
+
+  // ---------- reading prices off a line ----------
+  var DIGITISH = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', i: '1', '|': '1', S: '5', s: '5', B: '8', Z: '2', z: '2' };
+  /* The price at the end of a line, allowing for the usual misreads: 4,29  4. 29  $4.29  4.29F  4.29 *  -1.00  1.00-  (1.00)  4.2O */
+  function priceAtEnd(line, opts) {
+    var toks = tidy(line).split(' ');
+    if (!toks[0]) return null;
+    var neg = false, last = toks[toks.length - 1];
+    if (toks.length > 1 && /^(CR|-)$/i.test(last)) { neg = true; toks.pop(); last = toks[toks.length - 1]; }
+    // A tax or promo flag after the price ("4.29 F", "4.29 *")
+    if (toks.length > 1 && /^[A-Z*#^]{1,2}$/.test(last) && /\d/.test(toks[toks.length - 2])) { toks.pop(); last = toks[toks.length - 1]; }
+    // "4. 29" read as two pieces
+    if (toks.length > 1 && /^\d{2}$/.test(last) && /[.,:;]$/.test(toks[toks.length - 2])) { toks.pop(); toks[toks.length - 1] += last; last = toks[toks.length - 1]; }
+    var m = /^(-|\()?\$?(-)?([0-9OoDQIl|iSsBZz]{1,4})[.,:;]([0-9OoDQIl|iSsBZz]{2})(-|\))?([A-Z*#^]{0,2})$/.exec(last), guess = false;
+    // The decimal point read as a digit ("5.50" as "5750" or "55.53" as "55253"): only on a line with words, and flagged as a guess.
+    if (!m && opts && opts.guess) {
+      var g = /^\$?(\d{1,3})[7214](\d{2})$/.exec(last);
+      if (g) { m = [last, '', '', g[1], g[2], '', '']; guess = true; }
+    }
+    if (!m || !/\d/.test(m[3] + m[4])) return null;
+    var fix = function (s) { return s.replace(/[^0-9]/g, function (c) { return DIGITISH[c] || c; }); };
+    var d = fix(m[3]), c = fix(m[4]);
+    if (!/^\d+$/.test(d) || !/^\d\d$/.test(c)) return null;
+    if (m[1] || m[2] || m[5]) neg = true;
+    toks.pop();
+    var rest = toks.join(' ').replace(/\$\s*$/, '').trim();
+    if (guess && letters(rest) < 2) return null;
+    if (/[:;]/.test(last) && (letters(rest) < 2 || /\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}/.test(rest))) return null;
+    return { value: parseFloat(d + '.' + c), neg: neg, rest: rest, guess: guess };
+  }
+  function num(s) { return parseFloat(String(s).replace(',', '.')); }
+  function letters(s) { return (String(s).match(/[A-Za-z]/g) || []).length; }
+
+  var RE = {
+    subtotal: /\bsub\s*-?\s*total\b|\bsubtl\b/,
+    totalSaving: /\b(total|you)\s+(sav(ed|ings?)|discounts?)\b|\bsav(ed|ings?)\s+(today|total)\b/,
+    total: /\b(total|ttl|balance|bal due|amount due|amount payable|to pay)\b/,
+    end: /\b(eftpos|visa|mastercard|master card|amex|debit|credit card|cash|change|tender(ed)?|paywave|contactless|payment|paid by|rounding|approved|card no|acct)\b/,
+    info: /\b(gst|tax|items? sold|no\.? of items|number of items|item count|receipt|invoice|tel|phone|ph|www|thank|thanks|date|time|operator|register|lane|trans(action)?|reg|cashier|abn|nzbn|store no|welcome)\b/,
+    disc: /\b(sav(e|ed|ing|ings)|discount|disc|dsc|promo|promotion|club ?card|club ?price|club ?deal|club|deal|special|multi ?buy|coupon|markdown|mkdn|reduced|voucher|rewards?|onecard|price ?match|less|off)\b/,
+    qty: /^(?:qty\s*)?(\d{1,3})\s*(?:@|x|×|at)\s*\$?\s?(\d{1,4}[.,]\d{2})(?!\s*\/?\s*kg)/i,
+    weight: /(\d{1,3}[.,]\d{1,3})\s*kg\b.*?\$?\s?(\d{1,4}[.,]\d{2})\s*(?:\/|per)\s*kg/i
+  };
+
+  /* Read receipt text into item lines. Totals, tax, payment and anything after the total are never items. */
+  function parseReceipt(text) {
+    var lines = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return tidy(l.replace(/[\u2014\u2013]/g, '-').replace(/[|]{2,}/g, ' ')); });
+    var totalGuess = false, items = [], skipped = [], total = null, ended = false, pending = null, wantTotal = false;
+    function last() { return items[items.length - 1]; }
+    function skip(t, why) { skipped.push({ text: t, why: why }); }
+    lines.forEach(function (line) {
+      if (!line || (line.match(/[A-Za-z0-9]/g) || []).length < 2) return;
+      var pr = priceAtEnd(line) || priceAtEnd(line, { guess: true }), low = line.toLowerCase().replace(/[^a-z0-9.\/@ ]+/g, ' ').replace(/\s+/g, ' ');
+      if (wantTotal && pr && letters(pr.rest) === 0) { total = pr.value; wantTotal = false; skip(line, 'total'); return; }
+      if (ended) { skip(line, 'after the total'); return; }
+      if (RE.subtotal.test(low)) { skip(line, 'subtotal'); return; }
+      if (RE.totalSaving.test(low)) { skip(line, 'savings summary'); return; }
+      if (RE.total.test(low)) { if (pr) { total = pr.value; if (pr.guess) totalGuess = true; } else wantTotal = true; ended = true; skip(line, 'total'); return; }
+      if (RE.end.test(low)) { ended = true; skip(line, 'payment'); return; }
+      var wm = RE.weight.exec(line), qm = !wm && RE.qty.exec(line);
+      if (wm || qm) {
+        var a = num(wm ? wm[1] : qm[1]), each = num(wm ? wm[2] : qm[2]);
+        var tot = pr && Math.abs(pr.value - each) > 0.004 && /(@|x|×|at|kg)/i.test(pr.rest) ? pr.value : r2(a * each);
+        if (qm && pr && Math.abs(pr.value - each) <= 0.004 && a > 1 && letters(pr.rest.replace(/\b(qty|x|at|ea|each)\b/gi, '')) === 0) tot = r2(a * each);
+        var info = wm ? { kg: a, unit: each } : { count: a, each: each };
+        var lp = last();
+        if (pending) { items.push(Object.assign({ name: pending.name, total: tot, discount: 0, lines: [pending.line, line] }, info)); pending = null; }
+        else if (lp && !lp.kg && !lp.count && Math.abs(lp.total - tot) <= 0.02 + lp.discount) { Object.assign(lp, info); lp.lines.push(line); }
+        else { items.push(Object.assign({ name: wm ? 'Weighed item' : 'Item', total: tot, discount: 0, lines: [line], noName: true }, info)); }
+        return;
+      }
+      if (pr && (pr.neg || RE.disc.test(low))) {
+        var li = last();
+        if (pending) { skip(line, 'saving: the item above it had no price it could read'); return; }
+        if (li) { var d = Math.abs(pr.value); li.discount = r2(li.discount + d); li.total = r2(li.total - d); li.lines.push(line); }
+        else skip(line, 'saving with no item before it');
+        return;
+      }
+      if (RE.info.test(low)) { skip(line, 'not an item'); return; }
+      if (pr) {
+        var name = tidy(pr.rest.replace(/^[^A-Za-z0-9]+/, ''));
+        if (letters(name) < 2) {
+          if (pending) { name = pending.name; pending = null; }
+          else { skip(line, 'price with no name'); return; }
+        }
+        if (pr.value === 0) { skip(line, 'zero price'); return; }
+        items.push({ name: name, total: pr.value, discount: 0, lines: [line], guess: pr.guess || undefined });
+        pending = null;
+        return;
+      }
+      if (letters(line) >= 3 && /\s\S*\d\S*$/.test(line) && /\d{2}\S*$/.test(line)) skip(line, 'price unreadable: type it in if this is one of your items');
+      if (letters(line) >= 3) pending = { name: tidy(line.replace(/^[^A-Za-z0-9]+/, '')), line: line };
+    });
+    // The same thing scanned twice shows as two lines: count them as one line with a quantity.
+    var merged = [], byKey = {};
+    items.forEach(function (it) {
+      var k = recKey(it.name) + '|' + it.total;
+      if (!it.noName && !it.kg && !it.count && !it.discount && byKey[k] && !byKey[k].kg && !byKey[k].discount) {
+        var m = byKey[k]; m.count = (m.count || 1) + 1; m.each = m.each || it.total; m.total = r2(m.each * m.count); m.lines = m.lines.concat(it.lines); m.merged = true;
+        return;
+      }
+      merged.push(it); if (!it.noName && !it.kg && !it.count) byKey[k] = it;
+    });
+    merged.forEach(function (it, i) { it.i = i; });
+    var sum = 0; merged.forEach(function (it) { sum += Math.round(it.total * 100); });
+    return { items: merged, total: total, totalGuess: totalGuess, sum: sum / 100, skipped: skipped };
+  }
+
+  // ---------- matching receipt words to item names ----------
+  var STOP = { the: 1, and: 1, of: 1, a: 1, with: 1, ea: 1, each: 1, nz: 1 };
+  function toks(s) {
+    var t = String(s == null ? '' : s).toLowerCase().replace(/['\u2018\u2019`]/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/(\d)\s*(litres?|liters?|ltrs?|lt)\b/g, '$1l').replace(/(\d)\s*(grams?|gms?|gr)\b/g, '$1g').replace(/(\d)\s*(kgs?|kilos?)\b/g, '$1kg')
+      .replace(/(\d)\s*(ml|l|g|kg|pk|pack)\b/g, '$1$2').replace(/(\d)[.,](\d)/g, '$1p$2').replace(/[^a-z0-9]+/g, ' ').trim();
+    return t ? t.split(' ').filter(function (w) { return !STOP[w]; }) : [];
+  }
+  function recKey(s) { return toks(s).join(' '); }
+  function isSubseq(a, b) { var j = 0; for (var i = 0; i < b.length && j < a.length; i++) if (b[i] === a[j]) j++; return j === a.length; }
+  function bigrams(s) { var o = []; for (var i = 0; i < s.length - 1; i++) o.push(s.slice(i, i + 2)); return o; }
+  function dice(a, b) {
+    if (a.length < 2 || b.length < 2) return 0;
+    var A = bigrams(a), B = bigrams(b).slice(), hit = 0;
+    A.forEach(function (x) { var k = B.indexOf(x); if (k >= 0) { hit++; B.splice(k, 1); } });
+    return 2 * hit / (A.length + bigrams(b).length);
+  }
+  function stem(w) { return w.length > 3 ? w.replace(/(ies)$/, 'y').replace(/(es|s)$/, '') : w; }
+  function tokSim(t, r) {
+    if (t === r) return 1;
+    var tn = /^\d/.test(t), rn = /^\d/.test(r);
+    if (tn || rn) return tn && rn && t.replace(/[a-z]+$/, '') === r.replace(/[a-z]+$/, '') ? 0.6 : 0;
+    if (stem(t) === stem(r)) return 0.95;
+    if (r.length >= 3 && t.indexOf(r) === 0) return 0.9;
+    if (t.length >= 3 && r.indexOf(t) === 0) return 0.85;
+    if (r.length >= 3 && r[0] === t[0] && r.length < t.length && isSubseq(r, t)) return 0.78;
+    var d = dice(t, r);
+    return d >= 0.5 ? d * 0.8 : 0;
+  }
+  /* How well a receipt line's words fit an item name, 0 to 1. Mostly: are the item's words all on the receipt line? */
+  function nameScore(itemName, recName) {
+    var T = toks(itemName), R = toks(recName);
+    if (!T.length || !R.length) return 0;
+    var w = function (x) { return /^\d/.test(x) ? 0.5 : 1; };
+    var ts = 0, tw = 0, rs = 0, rw = 0;
+    T.forEach(function (t) { var b = 0; R.forEach(function (r) { b = Math.max(b, tokSim(t, r)); }); ts += b * w(t); tw += w(t); });
+    R.forEach(function (r) { var b = 0; T.forEach(function (t) { b = Math.max(b, tokSim(t, r)); }); rs += b * w(r); rw += w(r); });
+    var s = 0.72 * (ts / tw) + 0.28 * (rs / rw);
+    var ct = T.join(''), cr = R.join('');
+    if (cr.length >= 4 && cr[0] === ct[0] && isSubseq(cr, ct)) s = Math.max(s, 0.72);
+    return Math.min(1, s);
+  }
+  function aliasKey(store, recName) { return 'ra:' + G.storeKey(store || '') + '|' + recKey(recName); }
+
+  /* Pair each item of the trip with at most one receipt line, and each receipt line with at most one item.
+     conf: 'learned' (approved before at this store), 'good', 'check' (unsure: off until ticked), 'none'. */
+  function matchTrip(recs, trip, parsed) {
+    var items = trip.items || [], lines = parsed.items, pairs = [], score = [];
+    items.forEach(function (it, n) {
+      score[n] = [];
+      lines.forEach(function (ln, j) {
+        var s = ln.noName ? 0 : nameScore(it.name, ln.name), learned = false;
+        var al = recs[aliasKey(trip.store, ln.name)];
+        if (al && !ln.noName && al === G.nameKey(it.name)) { s = 1.2; learned = true; }
+        if (s > 0 && it.price != null && !learned) {
+          var exp = G.lineCents(it) / 100;
+          if (exp > 0) { var diff = Math.abs(exp - ln.total); if (diff <= 0.011) s += 0.1; else if (diff / exp <= 0.15) s += 0.05; }
+        }
+        score[n][j] = s;
+        if (s >= 0.4) pairs.push({ n: n, j: j, s: s, learned: learned });
+      });
+    });
+    pairs.sort(function (a, b) { return b.s - a.s || a.n - b.n || a.j - b.j; });
+    var byItem = {}, byLine = {};
+    pairs.forEach(function (p) { if (byItem[p.n] == null && byLine[p.j] == null) { byItem[p.n] = p; byLine[p.j] = p; } });
+    var rows = items.map(function (it, n) {
+      var p = byItem[n];
+      if (!p) return { n: n, j: -1, conf: 'none', score: 0 };
+      var second = 0;
+      lines.forEach(function (ln, j) { if (j !== p.j) second = Math.max(second, score[n][j]); });
+      items.forEach(function (x, m) { if (m !== n) second = Math.max(second, score[m][p.j]); });
+      var conf = p.learned ? 'learned' : (p.s >= 0.78 && p.s - second >= 0.12 ? 'good' : 'check');
+      return { n: n, j: p.j, conf: conf, score: Math.round(p.s * 100) / 100 };
+    });
+    return rows;
+  }
+
+  /* What a receipt line says the item should be: quantity and line total (after any saving on it). */
+  function proposal(item, ln) {
+    var o = { total: ln.total, qty: item.qty == null ? 1 : +item.qty, note: '' };
+    if (ln.kg) { o.qty = ln.kg; o.note = 'Weighed: ' + G.qtyText(ln.kg) + ' kg at ' + G.money(ln.unit) + '/kg'; }
+    else if (ln.count) { o.qty = ln.count; o.note = ln.count + ' at ' + G.money(ln.each) + (ln.merged ? ' (on the receipt ' + ln.count + ' times)' : ''); }
+    else if (o.qty !== 1) o.note = 'The receipt shows one line. Check the qty.';
+    if (ln.discount) o.note = (o.note ? o.note + '. ' : '') + 'Includes a ' + G.money(ln.discount) + ' saving';
+    return o;
+  }
+
+  /* Everything the review screen starts with. Only sure matches are ticked; nothing is saved by this. */
+  function buildReview(recs, trip, parsed) {
+    var rows = matchTrip(recs, trip, parsed), used = {};
+    rows = rows.map(function (r) {
+      var it = trip.items[r.n], ln = r.j >= 0 ? parsed.items[r.j] : null;
+      if (ln) used[r.j] = 1;
+      var p = ln ? proposal(it, ln) : { total: it.line == null ? null : it.line, qty: it.qty == null ? 1 : +it.qty, note: '' };
+      var conf = r.conf;
+      if (ln && conf === 'good' && !ln.kg && !ln.count && (it.qty == null ? 1 : +it.qty) !== 1) conf = 'check';
+      if (ln && ln.guess && conf !== 'none') { conf = 'check'; p.note = (p.note ? p.note + '. ' : '') + 'The price was hard to read: check it against the receipt'; }
+      var on = !!ln && (conf === 'good' || conf === 'learned') && changed(it, p.qty, p.total);
+      return { n: r.n, j: r.j, conf: conf, score: r.score, qty: p.qty, total: p.total, note: p.note, on: on, touched: false };
+    });
+    var adds = parsed.items.filter(function (ln) { return !used[ln.i]; }).map(function (ln) {
+      return { j: ln.i, on: false, name: niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(niceName(ln.name), recs) };
+    });
+    return { rows: rows, adds: adds };
+  }
+  function changed(it, qty, total) {
+    var q0 = it.qty == null ? 1 : +it.qty;
+    if (total == null) return false;
+    return it.price == null || Math.abs(q0 - qty) > 0.0005 || Math.round(G.lineCents(it)) !== Math.round(total * 100);
+  }
+  function niceName(s) {
+    s = tidy(s);
+    if (s === s.toUpperCase()) s = s.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }).replace(/\b(\d+)(Ml|L|G|Kg|Pk)\b/g, function (m, d, u) { return d + u.toLowerCase().replace(/^l$/, 'L'); });
+    return s;
+  }
+  /* Price each from a line total, kept to 4 places so qty × price comes back to the exact total paid. */
+  function eachFrom(total, qty) { return qty > 0 ? r4(total / qty) : total; }
+
+  /* Build the change for the approved rows only. Touches one trip record (and learned receipt names for this store).
+     Never touches the list, other trips, other people, or any price outside this trip. */
+  function applyReceipt(recs, tripId, d, now) {
+    var t = recs['t:' + tripId]; if (!t) throw new Error('That trip has gone.');
+    now = now || Date.now();
+    var items = (t.items || []).map(function (x) { return Object.assign({}, x); }), ch = {}, changedN = 0, addedN = 0;
+    function money(v, nm) { var p = typeof v === 'number' ? v : G.parseMoney(v); if (p == null || !(p >= 0) || isNaN(p)) throw new Error('Check the amount for ' + nm + ': it needs to be a price, like 4.50.'); return p; }
+    function qty(v, nm) { var q = typeof v === 'number' ? v : G.parseQty(v); if (!(q > 0)) throw new Error('Check the qty for ' + nm + ': it needs to be above 0.'); return q; }
+    (d.rows || []).forEach(function (row) {
+      var it = items[row.n]; if (!it) throw new Error('An item on that trip has gone. Close this and scan again.');
+      var q = qty(row.qty, it.name), tot = money(row.total, it.name);
+      if (!changed(it, q, tot)) { if (row.rec && d.store) ch[aliasKey(d.store, row.rec)] = G.nameKey(it.name); return; }
+      if (it.was === undefined) it.was = { qty: it.qty == null ? 1 : it.qty, price: it.price == null ? null : it.price };
+      it.qty = q; it.price = eachFrom(tot, q); it.line = G.lineCents(it) / 100; it.receipt = true;
+      changedN++;
+      if (row.rec && d.store) ch[aliasKey(d.store, row.rec)] = G.nameKey(it.name);
+    });
+    (d.adds || []).forEach(function (a) {
+      var nm = tidy(a.name); if (!nm) throw new Error('A line you are adding needs a name.');
+      var q = qty(a.qty, nm), tot = money(a.total, nm);
+      var o = { name: nm, qty: q, price: eachFrom(tot, q), cat: G.CATEGORIES.indexOf(a.cat) >= 0 ? a.cat : G.guessCategory(nm, recs), receipt: true, fromReceipt: true };
+      o.line = G.lineCents(o) / 100; items.push(o); addedN++;
+      if (a.rec && d.store) ch[aliasKey(d.store, a.rec)] = G.nameKey(nm);
+    });
+    if (!changedN && !addedN) return { ch: ch, changed: 0, added: 0, total: t.total };
+    var totalC = 0; items.forEach(function (x) { totalC += G.lineCents(x); });
+    var nt = Object.assign({}, t, { items: items, total: totalC / 100 });
+    nt.receipt = { at: now, total: d.receiptTotal == null ? null : d.receiptTotal, changed: changedN + ((t.receipt && t.receipt.changed) || 0), added: addedN + ((t.receipt && t.receipt.added) || 0) };
+    if (t.wasTotal === undefined) nt.wasTotal = t.total;
+    ch['t:' + tripId] = nt;
+    return { ch: ch, changed: changedN, added: addedN, total: nt.total };
+  }
+
+  /* Put a trip back the way it was before any receipt changes. Learned receipt names are kept. */
+  function undoReceipt(recs, tripId) {
+    var t = recs['t:' + tripId]; if (!t) throw new Error('That trip has gone.');
+    if (!t.receipt) return {};
+    var items = (t.items || []).filter(function (x) { return !x.fromReceipt; }).map(function (x) {
+      var o = Object.assign({}, x);
+      if (o.was) { o.qty = o.was.qty; o.price = o.was.price; o.line = G.lineCents(o) / 100; }
+      delete o.was; delete o.receipt; return o;
+    });
+    var nt = Object.assign({}, t, { items: items });
+    var totalC = 0; items.forEach(function (x) { totalC += G.lineCents(x); });
+    nt.total = t.wasTotal !== undefined ? t.wasTotal : totalC / 100;
+    delete nt.receipt; delete nt.wasTotal;
+    var ch = {}; ch['t:' + tripId] = nt; return ch;
+  }
+
+  var api = { undoReceipt: undoReceipt, proposal: proposal, recKey: recKey, priceAtEnd: priceAtEnd, parseReceipt: parseReceipt, toks: toks, nameScore: nameScore, matchTrip: matchTrip, buildReview: buildReview, applyReceipt: applyReceipt, eachFrom: eachFrom, niceName: niceName, aliasKey: aliasKey, changed: changed };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.GGR = api;
 })(typeof window !== 'undefined' ? window : this);
 </script>
 <script>/* GaF Grocery Grabber accounts and sync (same approach as the Movie Guide).
@@ -1223,7 +1541,7 @@ header.strip { overflow: hidden; }
 <script>/* GaF Grocery Grabber screens. */
 (function () {
   'use strict';
-  var G = window.GG, S = window.GGSync, CFG = window.GAF_CONFIG || {}, FX = window.GFX || null;
+  var G = window.GG, GGR = window.GGR, S = window.GGSync, CFG = window.GAF_CONFIG || {}, FX = window.GFX || null;
   var $ = function (id) { return document.getElementById(id); };
   var app = $('app'), layer = $('layer'), tabsEl = $('tabs');
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -1396,8 +1714,9 @@ header.strip { overflow: hidden; }
         var open = ui.open[t.id], over = t.limit && t.total > t.limit;
         h += '<div class="trip"><button class="hd" data-a="trip" data-v="' + esc(t.id) + '" aria-expanded="' + !!open + '"><div class="w"><div class="st">' + esc(t.store) + (t.branch ? ' ' + esc(t.branch) : '') + '</div><div class="d">' + fmtDate(t.date) + ' · ' + t.items.length + ' item' + (t.items.length === 1 ? '' : 's') + (t.limit ? ' · limit ' + G.money(t.limit) : '') + (over ? ' <span class="over-tag">OVER</span>' : '') + '</div></div><span class="amt">' + G.money(t.total) + '</span></button>';
         if (open) {
-          h += '<div class="body">' + t.items.map(function (p) { return '<div class="prow"><div class="nm">' + esc(p.name) + '<small>' + esc(p.cat) + (p.barcode ? ' · ' + esc(p.barcode) : '') + '</small></div><div class="v">' + G.money(p.line) + '<small>' + esc(qp(p)) + '</small></div></div>'; }).join('') +
-            '<div class="btns"><button class="btn small" data-a="again" data-v="' + esc(t.id) + '">Add all to list again</button><button class="btn small danger" data-a="deltrip" data-v="' + esc(t.id) + '">Delete trip</button></div></div>';
+          h += '<div class="body">' + t.items.map(function (p) { return '<div class="prow"><div class="nm">' + esc(p.name) + '<small>' + esc(p.cat) + (p.barcode ? ' · ' + esc(p.barcode) : '') + (p.fromReceipt ? ' · <span class="rc-tag">added from receipt</span>' : p.was ? ' · <span class="rc-tag">receipt price</span> ' + (p.was.price == null ? 'had no price' : 'was ' + G.money(G.lineCents(p.was) / 100)) : '') + '</small></div><div class="v">' + G.money(p.line) + '<small>' + esc(qp(p)) + '</small></div></div>'; }).join('') +
+            (t.receipt ? '<p class="tiny muted rc-done">Prices checked against the receipt' + (t.receipt.total != null ? ' (receipt total ' + G.money(t.receipt.total) + ')' : '') + '. Before the receipt: ' + G.money(t.wasTotal != null ? t.wasTotal : t.total) + '.</p>' : '') +
+            '<div class="btns"><button class="btn small" data-a="rcpt" data-v="' + esc(t.id) + '">📷 ' + (t.receipt ? 'Scan the receipt again' : 'Scan the receipt') + '</button>' + (t.receipt ? '<button class="btn small" data-a="rcundo" data-v="' + esc(t.id) + '">Undo receipt prices</button>' : '') + '<button class="btn small" data-a="again" data-v="' + esc(t.id) + '">Add all to list again</button><button class="btn small danger" data-a="deltrip" data-v="' + esc(t.id) + '">Delete trip</button></div></div>';
         }
         h += '</div>';
       });
@@ -1457,7 +1776,7 @@ header.strip { overflow: hidden; }
 
   // ---------- sheets ----------
   function openSheet(s) { s.fresh = true; ui.sheet = s; renderSheet(); }
-  function closeSheet() { stopScan(); ui.sheet = null; layer.innerHTML = ''; ui.cartOpen = ui.trashOpen = ''; }
+  function closeSheet() { stopScan(); ocr.job++; ui.sheet = null; layer.innerHTML = ''; ui.cartOpen = ui.trashOpen = ''; }
   function renderSheet() {
     var s = ui.sheet; if (!s) { layer.innerHTML = ''; return; }
     var body = '', title = '';
@@ -1471,6 +1790,7 @@ header.strip { overflow: hidden; }
     else if (s.type === 'help') { title = 'How to use it'; body = helpSheet(); }
     else if (s.type === 'scan') { title = 'Scan a barcode'; body = scanSheet(s); }
     else if (s.type === 'ph') { title = s.name; body = phSheet(s.name); }
+    else if (s.type === 'rcpt') { title = 'Scan the receipt'; body = rcptSheet(s); }
     else if (s.type === 'password') { title = s.recovery ? 'Choose a new password' : 'Change password'; body = pwSheet(); }
     if (s.type === 'scan' && layer.querySelector('#scanVideo')) { var m = layer.querySelector('#scanMsg'); return; }
     var oldSheet = layer.querySelector('.sheet'), y = oldSheet ? oldSheet.scrollTop : 0, kept = [];
@@ -1551,6 +1871,7 @@ header.strip { overflow: hidden; }
     ['totals', 'Cart total and the List amount', '<ul><li><b>The cart total</b> (in the black box on the cart) is what is in your trolley now.</li><li><b>List</b>, under the limit bar, is roughly what is still on your list. Items with no price yet show as "+ unpriced".</li><li><b>Spending limit:</b> tap <b>Set a spending limit</b> to choose an amount for this shop. The bar shows how much is left.</li></ul><div class="lvkey"><span><span class="k green">Green</span>under 75% of the limit</span><span><span class="k amber">Yellow</span>from 75%</span><span><span class="k orange">Orange</span>from 90%</span><span><span class="k red">Red</span>over the limit</span></div>'],
     ['trash', 'Empty cart and the trash', '<ul><li><b>Empty cart</b> (in the cart) asks first, then moves everything to the trash, not gone.</li><li>Open the <b>bin</b> at the bottom of your list to see the trash. Tap an item for <b>Back to list</b> or <b>Back to cart</b>.</li><li>Nothing is gone for good until you tap <b>Empty trash</b>, or finish a shop with <b>Shopping complete</b>, which empties the trash.</li></ul>'],
     ['done', 'Shopping complete', '<ul><li>Open the cart and tap <b>Shopping complete</b>.</li><li>Choose the <b>store</b>, then the <b>branch</b>. A new store or branch is typed once (use <b>Other…</b> or <b>New branch…</b>) and remembered after that.</li><li>Check the date and tap <b>Complete</b>. The cart goes into your history with its prices, and anything still on your list stays there for next time.</li></ul>'],
+    ['receipt', 'Scanning the receipt', '<ul><li>After <b>Shopping complete</b>, the app offers to scan the receipt. Tap <b>Not now</b> to skip: you can do it later from <b>History</b>, by opening the trip and tapping <b>Scan the receipt</b>.</li><li>Take a photo with the receipt flat, in good light, filling the screen. The photo is read on your phone, not uploaded. The first scan downloads the reader, so it needs the internet and takes a little longer.</li><li><b>You approve every change.</b> Each item shows what it was, the receipt line it matched and the new amount. Sure matches start ticked. <b>Check this</b> rows start unticked: look, fix the qty or amount if needed, and tick them. Change the receipt line in the menu if it picked the wrong one.</li><li>Savings and club prices on the receipt come off the item above them. Weighed items use the kg on the receipt. Totals, GST and payment lines are never counted as items. If the lines found do not add up to the receipt total, it tells you.</li><li>Lines on the receipt that are not on the trip can be ticked to add them.</li><li>Nothing changes until you tap <b>Approve</b>, and only that trip changes: your list and your other trips stay as they are. The approved prices then show in History, Reports and the price history.</li><li>If it misreads something, open <b>The text it read</b>, fix it and tap <b>Read again</b>, or just type the amounts in the boxes. <b>Type the prices in myself</b> skips the photo. <b>Undo receipt prices</b> in the trip puts it back.</li><li>It learns: when you approve a receipt line as one of your items, it matches it straight away next time at that store.</li></ul>'],
     ['hist', 'History', '<ul><li><b>Trips</b> lists each shop with the store, date and total. Tap one to see what you bought. <b>Add all to list again</b> puts the lot back on your list.</li><li><b>Every item</b> lets you search and filter by category, store and time.</li><li>Tap any item to see its <b>price history</b>: what you paid, when and where.</li></ul>'],
     ['rep', 'Reports and export', '<ul><li><b>Reports</b> shows trips, total spent and spend per trip, your most popular items, spending by category and by store. Filter by time, category and store.</li><li><b>Export:</b> in the <b>More</b> tab, tap <b>Export history (CSV)</b> for a spreadsheet of everything you\'ve bought, with date, store, branch, price and barcode.</li></ul>'],
     ['order', 'Changing category order', '<ul><li>Tap the <b>cog</b>, then <b>Category order</b> (or <b>Change category order</b> in More).</li><li>Use ▲ and ▼ to move a category. Your list and menus follow straight away.</li><li><b>Reset to the standard order</b> puts it back. Items always stay in their own category.</li></ul>'],
@@ -1731,6 +2052,15 @@ header.strip { overflow: hidden; }
       case 'clearbc': ui.addBarcode = ''; addHint(); break;
       case 'hist': ui.hist = v; render(); break;
       case 'trip': ui.open[v] = !ui.open[v]; render(); break;
+      case 'rcpt': openSheet({ type: 'rcpt', id: v, step: 'pick' }); break;
+      case 'rcstop': if (ui.sheet) { ocr.job++; ui.sheet.step = ui.sheet.text ? 'review' : 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcmanual': if (ui.sheet) { ui.sheet.manual = true; ui.sheet.text = ''; rcReview(ui.sheet); } break;
+      case 'rcreparse': if (ui.sheet) { var ta = $('rcText'); ui.sheet.text = ta ? ta.value : ui.sheet.text; ui.sheet.manual = true; rcReview(ui.sheet); } break;
+      case 'rcnew': if (ui.sheet) { ui.sheet.text = ''; ui.sheet.parsed = null; ui.sheet.manual = false; ui.sheet.err = ''; ui.sheet.step = 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcundo': {
+        var rt = r['t:' + v]; if (!rt || !confirm('Put this trip back to the prices from before the receipt? Lines added from the receipt come off.')) break;
+        act(GGR.undoReceipt(r, v), 'Receipt prices undone. Trip back to ' + G.money(rt.wasTotal != null ? rt.wasTotal : rt.total), true); break;
+      }
       case 'again': {
         var tr = r['t:' + v], ch = {}, rr = r, n2 = 0;
         tr.items.forEach(function (p) {
@@ -1767,11 +2097,14 @@ header.strip { overflow: hidden; }
 
   document.addEventListener('input', function (e) {
     var t = e.target;
+    if (t.hasAttribute && t.hasAttribute('data-rc') && t.type !== 'checkbox' && t.tagName !== 'SELECT') { rcInput(t); return; }
     if (t.id === 'nName') { if (!t.value.trim()) ui.addBarcode = ui.addBarcode; addHint(); }
     if (t.hasAttribute && t.hasAttribute('data-hf') && t.id === 'hq') { ui.hf.q = t.value; var rows = G.filterPurchases(R(), ui.hf), sum = 0; rows.forEach(function (p) { sum += G.cents(p.line); }); $('hRows').innerHTML = histRows(rows); $('hSum').innerHTML = '<b>' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + ' · ' + G.money(sum / 100) + '</b>'; }
   });
   document.addEventListener('change', function (e) {
     var t = e.target;
+    if (t.id === 'rcCam' || t.id === 'rcLib') { var file = t.files && t.files[0]; t.value = ''; if (file) readReceiptPhoto(file); return; }
+    if (t.hasAttribute('data-rc')) { if (t.getAttribute('data-rc') === 'line') rcPickLine(t); else if (t.type === 'checkbox' || t.tagName === 'SELECT') rcInput(t); return; }
     if (t.hasAttribute('data-hf') && t.id !== 'hq') { ui.hf[t.getAttribute('data-hf')] = t.value; render(); }
     if (t.hasAttribute('data-rf')) { ui.rf[t.getAttribute('data-rf')] = t.value; render(); }
     if (t.form && t.form.id === 'doneForm' && (t.name === 'store' || t.name === 'branch')) {
@@ -1821,9 +2154,13 @@ header.strip { overflow: hidden; }
       var useNew = s.store === '__other' || s.branch === '__new' || !G.branches(r, store).length;
       var branch = useNew ? (s.newbranch || '').trim() : s.branch;
       var total = G.totals(r).cart, count = G.items(r, 'cart').length;
-      act(G.completeTrip(r, { store: store, branch: branch, date: s.date }), 'Trip saved: ' + count + ' item' + (count === 1 ? '' : 's') + ', ' + G.money(total));
-      closeSheet(); return;
+      var tid = G.uid();
+      act(G.completeTrip(r, { id: tid, store: store, branch: branch, date: s.date }), 'Trip saved: ' + count + ' item' + (count === 1 ? '' : 's') + ', ' + G.money(total));
+      closeSheet();
+      if (R()['t:' + tid]) openSheet({ type: 'rcpt', id: tid, step: 'pick', after: true });
+      return;
     }
+    if (f.id === 'rcForm') { rcApprove(); return; }
     if (f.id === 'scanForm') { var code = f.elements.code.value.replace(/\s+/g, ''); if (!code) throw new Error('Type the barcode number.'); gotCode(code); return; }
     if (f.id === 'pwForm') {
       var btn = f.querySelector('button[type=submit]'); btn.disabled = true;
@@ -1843,6 +2180,207 @@ header.strip { overflow: hidden; }
         ui.auth = 'in'; render();
       }, function (err) { go.disabled = false; go.textContent = label; errEl.textContent = err.message; });
     }
+  }
+
+  // ---------- receipt scanning: read the receipt, show the changes, save only what is approved ----------
+  var TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js';
+  var ocr = { worker: null, loading: null, job: 0 };
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (ocr.loading) return ocr.loading;
+    ocr.loading = new Promise(function (ok, no) {
+      var sc = document.createElement('script'), t = setTimeout(function () { no(new Error('net')); }, 45000);
+      sc.src = TESS_URL; sc.async = true;
+      sc.onload = function () { clearTimeout(t); window.Tesseract ? ok(window.Tesseract) : no(new Error('net')); };
+      sc.onerror = function () { clearTimeout(t); no(new Error('net')); };
+      document.head.appendChild(sc);
+    }).catch(function (e) { ocr.loading = null; throw e; });
+    return ocr.loading;
+  }
+  function getWorker(onPct) {
+    ocr.onPct = onPct;
+    if (ocr.worker) return ocr.worker;
+    ocr.worker = loadTesseract().then(function (T) {
+      return T.createWorker('eng', 1, { logger: function (m) { if (ocr.onPct && m && typeof m.progress === 'number') ocr.onPct(m.status, m.progress); } });
+    }).then(function (w) {
+      return w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }).then(function () { return w; });
+    }).catch(function (e) { ocr.worker = null; throw e; });
+    return ocr.worker;
+  }
+  /* Make the photo easier to read: no bigger than it needs to be, grey, with the contrast stretched. */
+  function prepImage(file) {
+    return new Promise(function (ok, no) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(2, 3200 / Math.max(w, h));
+        if (Math.min(w, h) < 200) { URL.revokeObjectURL(url); no(new Error('small')); return; }
+        var c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+        var x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        try {
+          var d = x.getImageData(0, 0, c.width, c.height), p = d.data, lo = 255, hi = 0, i, g;
+          for (i = 0; i < p.length; i += 16) { g = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; if (g < lo) lo = g; if (g > hi) hi = g; }
+          var span = Math.max(40, hi - lo);
+          for (i = 0; i < p.length; i += 4) { g = (0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2] - lo) * 255 / span; g = g < 0 ? 0 : g > 255 ? 255 : g; p[i] = p[i + 1] = p[i + 2] = g; }
+          x.putImageData(d, 0, 0);
+        } catch (e) {}
+        ok(c);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); no(new Error('image')); };
+      img.src = url;
+    });
+  }
+  function rcSheetOpen(id, s) { return ui.sheet && ui.sheet.type === 'rcpt' && ui.sheet.id === id && (!s || ui.sheet === s); }
+  function readReceiptPhoto(file) {
+    var s = ui.sheet; if (!s || s.type !== 'rcpt' || !file) return;
+    if (!/^image\//.test(file.type || 'image/')) { rcFail(s, 'That file isn\'t a photo. Choose a photo of the receipt.'); return; }
+    var job = ++ocr.job; s.step = 'reading'; s.pct = 0; s.status = 'Getting the photo ready…'; s.fresh = true; renderSheet();
+    function pct(status, p) {
+      if (job !== ocr.job || !rcSheetOpen(s.id, s)) return;
+      s.status = /recogniz/i.test(status) ? 'Reading the receipt…' : 'Loading the receipt reader (first time takes longer)…';
+      s.pct = /recogniz/i.test(status) ? Math.round(p * 100) : 0;
+      var b = layer.querySelector('#rcBar'), m = layer.querySelector('#rcStatus');
+      if (b) b.style.width = Math.max(4, s.pct) + '%'; if (m) m.textContent = s.status + (s.pct ? ' ' + s.pct + '%' : '');
+    }
+    prepImage(file).then(function (canvas) {
+      return getWorker(pct).then(function (w) { return w.recognize(canvas); });
+    }).then(function (res) {
+      if (job !== ocr.job || !rcSheetOpen(s.id, s)) return;
+      var text = (res && res.data && res.data.text) || '';
+      s.text = s.text ? s.text.replace(/\s*$/, '\n') + text : text;
+      rcReview(s);
+    }, function (err) {
+      if (job !== ocr.job || !rcSheetOpen(s.id, s)) return;
+      var m = err && err.message;
+      rcFail(s, m === 'net' ? 'The receipt reader couldn\'t load. It needs the internet the first time. Check your connection and try again, or type the prices in yourself.'
+        : m === 'small' ? 'That photo is too small to read. Take it closer, with the whole receipt filling the screen.'
+        : m === 'image' ? 'That photo couldn\'t be opened. Try taking it again.'
+        : 'The receipt couldn\'t be read this time. Try another photo in good light, or type the prices in yourself.');
+    });
+  }
+  function rcFail(s, msg) { s.step = s.text ? 'review' : 'pick'; s.err = msg; s.fresh = true; if (s.step === 'review') rcReview(s, true); else renderSheet(); }
+  function rcReview(s, keepErr) {
+    var t = R()['t:' + s.id]; if (!t) { closeSheet(); toast('That trip has gone.'); return; }
+    if (!keepErr) s.err = '';
+    s.parsed = GGR.parseReceipt(s.text || '');
+    var rv = GGR.buildReview(R(), t, s.parsed);
+    s.rows = rv.rows; s.adds = {}; rv.adds.forEach(function (a) { s.adds[a.j] = a; });
+    s.step = 'review'; s.fresh = true;
+    if (!s.parsed.items.length && !s.err && !s.manual) s.err = 'No prices were found in what was read. Check the text below and fix it, take another photo, or type the prices straight into the boxes.';
+    renderSheet();
+  }
+  function rcLine(s, j) { return j >= 0 && s.parsed ? s.parsed.items[j] : null; }
+  function rcEach(total, qty) { return total != null && qty > 0 ? G.money(GGR.eachFrom(total, qty)) + (Math.abs(qty - 1) > 0.0005 ? ' each' : '') : ''; }
+  function rcCount(s) {
+    var t = R()['t:' + s.id], n = 0; if (!t || !s.rows) return 0;
+    s.rows.forEach(function (row) { var it = t.items[row.n]; if (row.on && it && (row.total == null || row.qty == null || isNaN(row.total) || isNaN(row.qty) || GGR.changed(it, row.qty, row.total))) n++; });
+    Object.keys(s.adds || {}).forEach(function (j) { if (s.adds[j].on && !rcUsed(s, +j)) n++; });
+    return n;
+  }
+  function rcUsed(s, j) { return (s.rows || []).some(function (r) { return r.j === j; }); }
+  var CONF = { learned: ['ok', 'Learned'], good: ['ok', 'Good match'], check: ['chk', 'Check this'], none: ['no', 'Not found'] };
+  function rcptSheet(s) {
+    var t = R()['t:' + s.id]; if (!t) return '<p class="muted">That trip has gone.</p>';
+    var where = esc(t.store) + (t.branch ? ' ' + esc(t.branch) : '') + ', ' + fmtDate(t.date);
+    var err = s.err ? '<p class="rc-err" role="alert">' + esc(s.err) + '</p>' : '<p class="rc-err" role="alert" hidden></p>';
+    if (s.step === 'reading') return '<div class="panel"><p><b>' + where + '</b></p><p id="rcStatus">' + esc(s.status || 'Reading…') + (s.pct ? ' ' + s.pct + '%' : '') + '</p><div class="rc-prog"><i id="rcBar" style="width:' + Math.max(4, s.pct || 0) + '%"></i></div><p class="tiny muted">Keep the app open. The photo stays on your phone: it is read here, not uploaded.</p></div>' +
+      '<div class="btns"><button type="button" class="btn small" data-a="rcstop">Stop</button></div>';
+    var pick = '<input type="file" id="rcCam" accept="image/*" capture="environment" class="rc-file"><input type="file" id="rcLib" accept="image/*" class="rc-file">';
+    if (s.step !== 'review') {
+      return '<div class="panel"><p><b>' + where + '</b> · ' + t.items.length + ' item' + (t.items.length === 1 ? '' : 's') + ' · ' + G.money(t.total) + '</p>' +
+        '<p>Take a photo of the receipt and the app reads the prices you actually paid. You see every change first, and <b>nothing is saved until you tap Approve</b>. Only this trip changes.</p>' + err + pick +
+        '<div class="btns rc-pick"><label for="rcCam" class="btn wide pri">📷 Take a photo of the receipt</label><label for="rcLib" class="btn wide">Choose a photo</label><button type="button" class="btn wide" data-a="rcmanual">Type the prices in myself</button></div>' +
+        '<p class="tiny muted">Tips: lay the receipt flat in good light, fill the screen with it, and keep it straight. A long receipt can go in two photos: do the top first, then Add another photo.</p></div>' +
+        (s.after ? '<div class="btns"><button type="button" class="btn small" data-a="close">Not now</button></div>' : '');
+    }
+    var p = s.parsed || { items: [], skipped: [], total: null, sum: 0 }, lines = p.items;
+    var h = '<div class="panel rc-head"><p><b>' + where + '</b></p>';
+    if (lines.length) h += '<p>Found ' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ' adding up to <b>' + G.money(p.sum) + '</b>' + (p.total != null ? '. Receipt total: <b>' + G.money(p.total) + '</b>' + (p.totalGuess ? ' (hard to read, so check it)' : '') : '') + '.</p>';
+    if (p.total != null && Math.abs(p.total - p.sum) > 0.05) h += '<p class="rc-warn">The lines found don\'t add up to the receipt total (' + G.money(Math.abs(p.total - p.sum)) + ' ' + (p.sum < p.total ? 'short' : 'over') + '). A line may be missing or misread, so check the amounts, or add another photo.</p>';
+    h += '<p class="tiny">Ticked rows are the changes. Sure matches start ticked; <b>Check this</b> rows start unticked until you look at them. Nothing is saved until you tap <b>Approve</b>.</p>' + err + '</div>';
+    h += '<form id="rcForm" novalidate><h3 class="rc-h">Items on this trip</h3>';
+    var opts = function (sel) { return '<option value="-1">No receipt line</option>' + lines.map(function (ln, j) { return '<option value="' + j + '"' + (j === sel ? ' selected' : '') + '>' + esc(ln.name) + ' · ' + G.money(ln.total) + '</option>'; }).join(''); };
+    s.rows.forEach(function (row, k) {
+      var it = t.items[row.n]; if (!it) return;
+      var ln = rcLine(s, row.j), cf = CONF[row.conf] || CONF.none, nochange = row.total != null && !GGR.changed(it, row.qty, row.total);
+      h += '<div class="rc-row' + (row.on ? ' on' : '') + '" data-k="' + k + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="on" data-k="' + k + '"' + (row.on ? ' checked' : '') + (nochange && !row.on ? '' : '') + '><span><b>' + esc(it.name) + '</b><small>Was ' + esc(qp(it)) + (it.price != null ? ' = ' + G.money(G.lineCents(it) / 100) : '') + '</small></span></label><span class="rc-conf ' + cf[0] + '">' + (nochange && ln ? 'Same price' : cf[1]) + '</span></div>';
+      h += '<div class="f"><label for="rcL' + k + '">Receipt line</label><select id="rcL' + k + '" data-rc="line" data-k="' + k + '">' + opts(row.j) + '</select></div>';
+      if (ln) h += '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>';
+      if (row.note) h += '<p class="tiny muted rc-note">' + esc(row.note) + '</p>';
+      h += '<div class="row rc-nums"><div class="f"><label for="rcQ' + k + '">Qty</label><input id="rcQ' + k + '" data-rc="qty" data-k="' + k + '" inputmode="decimal" value="' + esc(row.qty == null || isNaN(row.qty) ? (row.qtyText || '') : G.qtyText(row.qty)) + '"></div>' +
+        '<div class="f"><label for="rcT' + k + '">Paid (line)</label><input id="rcT' + k + '" data-rc="total" data-k="' + k + '" inputmode="decimal" placeholder="0.00" value="' + esc(row.total == null || isNaN(row.total) ? (row.totalText || '') : row.total.toFixed(2)) + '"></div>' +
+        '<div class="rc-each" id="rcE' + k + '">' + rcEach(row.total, row.qty) + '</div></div></div>';
+    });
+    var extra = lines.filter(function (ln) { return !rcUsed(s, ln.i); });
+    if (extra.length) {
+      h += '<h3 class="rc-h">On the receipt but not on this trip</h3><p class="tiny muted">Tick one to add it to this trip. Pick a receipt line in a row above instead if it is one of your items.</p>';
+      var cats = G.catOrder(R());
+      extra.forEach(function (ln) {
+        var a = s.adds[ln.i] || (s.adds[ln.i] = { j: ln.i, on: false, name: GGR.niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(GGR.niceName(ln.name), R()) }), j = ln.i;
+        h += '<div class="rc-row add' + (a.on ? ' on' : '') + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="aon" data-j="' + j + '"' + (a.on ? ' checked' : '') + '><span><b>Add to this trip</b></span></label></div><div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
+          '<div class="f"><label for="rcAN' + j + '">Name</label><input id="rcAN' + j + '" data-rc="aname" data-j="' + j + '" value="' + esc(a.name) + '"></div>' +
+          '<div class="row rc-nums"><div class="f"><label for="rcAC' + j + '">Category</label><select id="rcAC' + j + '" data-rc="acat" data-j="' + j + '">' + cats.map(function (c) { return '<option' + (c === a.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div></div>' +
+          '<div class="row rc-nums"><div class="f"><label for="rcAQ' + j + '">Qty</label><input id="rcAQ' + j + '" data-rc="aqty" data-j="' + j + '" inputmode="decimal" value="' + esc(a.qty == null || isNaN(a.qty) ? (a.qtyText || '') : G.qtyText(a.qty)) + '"></div><div class="f"><label for="rcAT' + j + '">Paid (line)</label><input id="rcAT' + j + '" data-rc="atotal" data-j="' + j + '" inputmode="decimal" value="' + esc(a.total == null || isNaN(a.total) ? (a.totalText || '') : a.total.toFixed(2)) + '"></div></div></div>';
+      });
+    }
+    if (p.skipped.length) h += '<details class="rc-skip"><summary>Lines left out (' + p.skipped.length + ')</summary><p class="tiny muted">Totals, GST, payment and savings summaries are never counted as items.</p>' + p.skipped.map(function (x) { return '<div class="rc-raw">' + esc(x.text) + ' <small>(' + esc(x.why) + ')</small></div>'; }).join('') + '</details>';
+    h += '<details class="rc-text"' + (lines.length ? '' : ' open') + '><summary>The text it read</summary><p class="tiny muted">Fix a misread price or name here, then tap Read again.</p><textarea id="rcText" class="inp" rows="8" spellcheck="false">' + esc(s.text || '') + '</textarea><div class="btns"><button type="button" class="btn small" data-a="rcreparse">Read again</button></div></details>';
+    var n = rcCount(s);
+    h += '<div class="btns rc-go"><button type="submit" class="btn wide pri" id="rcApprove"' + (n ? '' : ' disabled') + '>' + (n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing ticked to change') + '</button></div><p class="tiny muted" style="text-align:center">Changes this trip only: your list and your other trips stay as they are.</p></form>';
+    h += pick + '<div class="btns"><label for="rcCam" class="btn small">📷 Add another photo</label><button type="button" class="btn small" data-a="rcnew">Start again</button></div>';
+    return h;
+  }
+  function rcRefresh(s) {
+    var b = layer.querySelector('#rcApprove'); if (!b) return; var n = rcCount(s);
+    b.disabled = !n; b.textContent = n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing ticked to change';
+  }
+  function rcInput(t) {
+    var s = ui.sheet; if (!s || s.type !== 'rcpt' || s.step !== 'review') return false;
+    var f = t.getAttribute('data-rc'); if (!f) return false;
+    var row = t.hasAttribute('data-k') ? s.rows[+t.getAttribute('data-k')] : null, a = t.hasAttribute('data-j') ? s.adds[+t.getAttribute('data-j')] : null;
+    var tick = function (el) { var box = el.closest('.rc-row'); var cb = box && box.querySelector('input[type=checkbox]'); if (cb && !cb.checked) { cb.checked = true; box.classList.add('on'); } };
+    if (row && f === 'on') { row.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); }
+    else if (row && f === 'qty') { row.qtyText = t.value; var q = G.parseQty(t.value); row.qty = q; row.on = true; tick(t); }
+    else if (row && f === 'total') { row.totalText = t.value; var m = G.parseMoney(t.value); row.total = m == null ? NaN : m; row.on = true; tick(t); }
+    else if (a && f === 'aon') { a.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); }
+    else if (a && f === 'aname') { a.name = t.value; }
+    else if (a && f === 'acat') { a.cat = t.value; }
+    else if (a && f === 'aqty') { a.qtyText = t.value; a.qty = G.parseQty(t.value); a.on = true; tick(t); }
+    else if (a && f === 'atotal') { a.totalText = t.value; var am = G.parseMoney(t.value); a.total = am == null ? NaN : am; a.on = true; tick(t); }
+    if (row) { var e = layer.querySelector('#rcE' + t.getAttribute('data-k')); if (e) e.textContent = rcEach(row.total, row.qty); }
+    rcRefresh(s); return true;
+  }
+  function rcPickLine(t) {
+    var s = ui.sheet, k = +t.getAttribute('data-k'), row = s.rows[k], j = +t.value, tr = R()['t:' + s.id]; if (!row || !tr) return;
+    if (j >= 0) s.rows.forEach(function (o, m) { if (m !== k && o.j === j) { o.j = -1; o.on = false; o.conf = 'none'; o.note = ''; } });
+    row.j = j;
+    var it = tr.items[row.n], ln = rcLine(s, j);
+    if (ln) { var pr = GGR.proposal(it, ln); row.qty = pr.qty; row.total = pr.total; row.note = pr.note; row.conf = 'picked'; row.on = GGR.changed(it, pr.qty, pr.total); }
+    else { row.conf = 'none'; row.note = ''; row.on = false; row.qty = it.qty == null ? 1 : +it.qty; row.total = it.price == null ? null : G.lineCents(it) / 100; }
+    row.qtyText = row.totalText = undefined;
+    renderSheet();
+  }
+  CONF.picked = ['ok', 'Your pick'];
+  function rcApprove() {
+    var s = ui.sheet, r = R(), t = r['t:' + s.id]; if (!t) throw new Error('That trip has gone.');
+    var rows = [], adds = [];
+    s.rows.forEach(function (row) {
+      if (!row.on) return; var it = t.items[row.n]; if (!it) return;
+      if (row.total == null || isNaN(row.total)) throw new Error('Type what you paid for ' + it.name + ', or untick it.');
+      if (!(row.qty > 0)) throw new Error('Check the qty for ' + it.name + '.');
+      var ln = rcLine(s, row.j); rows.push({ n: row.n, qty: row.qty, total: row.total, rec: ln && !ln.noName ? ln.name : '' });
+    });
+    Object.keys(s.adds || {}).forEach(function (j) {
+      var a = s.adds[j]; if (!a.on || rcUsed(s, +j)) return;
+      if (!(a.name || '').trim()) throw new Error('Give the added line a name, or untick it.');
+      if (a.total == null || isNaN(a.total)) throw new Error('Type what you paid for ' + a.name + ', or untick it.');
+      if (!(a.qty > 0)) throw new Error('Check the qty for ' + a.name + '.');
+      var ln = rcLine(s, +j); adds.push({ name: a.name, qty: a.qty, total: a.total, cat: a.cat, rec: ln && !ln.noName ? ln.name : '' });
+    });
+    var res = GGR.applyReceipt(r, s.id, { rows: rows, adds: adds, store: t.store, receiptTotal: s.parsed ? s.parsed.total : null });
+    if (!res.changed && !res.added) { if (Object.keys(res.ch).length) eng.change(res.ch); closeSheet(); toast('No prices needed changing'); return; }
+    var was = t.total; ui.open[s.id] = true;
+    closeSheet();
+    act(res.ch, 'Receipt applied: ' + (res.changed ? res.changed + ' price' + (res.changed === 1 ? '' : 's') + ' fixed' : '') + (res.changed && res.added ? ', ' : '') + (res.added ? res.added + ' added' : '') + '. Trip ' + G.money(was) + ' → ' + G.money(res.total), true);
   }
 
   // ---------- drag and drop: click-drag with a mouse, press-hold-slide on a phone ----------
