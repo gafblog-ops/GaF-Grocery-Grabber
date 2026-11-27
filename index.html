@@ -774,12 +774,22 @@ header.strip { overflow: hidden; }
   function priceAtEnd(line, opts) {
     var toks = tidy(line).split(' ');
     if (!toks[0]) return null;
+    // Specks read after the price (";", "'", ".") are not part of it
+    while (toks.length > 1 && /^[;:,.'`"|_~]+$/.test(toks[toks.length - 1])) toks.pop();
     var neg = false, last = toks[toks.length - 1];
     if (toks.length > 1 && /^(CR|-)$/i.test(last)) { neg = true; toks.pop(); last = toks[toks.length - 1]; }
+    // A minus read as something else ("~$6.00", the maths minus, a long dash) is still a minus.
+    toks[toks.length - 1] = last = last.replace(/^[~\u2212\u2010\u2011\u2012\uFE63\uFF0D](?=\$?\d)/, '-');
+    // A minus standing apart from its price ("- $6.00", "- 6.00")
+    if (toks.length > 2 && toks[toks.length - 2] === '-' && /^\$?\d/.test(last)) { toks.splice(toks.length - 2, 1); toks[toks.length - 1] = last = '-' + last; }
     // A tax or promo flag after the price ("4.29 F", "4.29 *")
     if (toks.length > 1 && /^[A-Z*#^]{1,2}$/.test(last) && /\d/.test(toks[toks.length - 2])) { toks.pop(); last = toks[toks.length - 1]; }
     // "4. 29" read as two pieces
     if (toks.length > 1 && /^\d{2}$/.test(last) && /[.,:;]$/.test(toks[toks.length - 2])) { toks.pop(); toks[toks.length - 1] += last; last = toks[toks.length - 1]; }
+    // "-$5 96": the point lost between a signed or $ amount and its cents
+    else if (toks.length > 2 && /^\d{2}\)?$/.test(last) && /^(-|\()?\$-?\d{1,3}$|^(-|\()\$?\d{1,3}$/.test(toks[toks.length - 2])) { toks.pop(); toks[toks.length - 1] += '.' + last; last = toks[toks.length - 1]; }
+    // A pack size is not a price: "COKE ZERO 2.25L", "MINCE 0.5KG", "JUICE 1.5ML" (a tax flag such as F or * still is)
+    if (/^\d{1,3}[.,]\d{1,3}(L|LT|LTR|ML|G|GM|KG|K)$/i.test(last)) return null;
     var m = /^(-|\()?\$?(-)?([0-9OoDQIl|iSsBZz]{1,4})[.,:;]([0-9OoDQIl|iSsBZz]{2})(-|\))?([A-Z*#^]{0,2})$/.exec(last), guess = false;
     // The decimal point read as a digit ("5.50" as "5750" or "55.53" as "55253"): only on a line with words, and flagged as a guess.
     if (!m && opts && opts.guess) {
@@ -808,7 +818,7 @@ header.strip { overflow: hidden; }
     total: /\b(total|ttl|balance|bal due|amount due|amount payable|to pay)\b/,
     end: /\b(eftpos|visa|mastercard|master card|amex|debit|credit card|cash|change|tender(ed)?|paywave|contactless|payment|paid by|rounding|approved|card no|acct)\b/,
     info: /\b(gst|tax|items? sold|no\.? of items|number of items|item count|receipt|invoice|tel|phone|ph|www|thank|thanks|date|time|operator|register|lane|trans(action)?|reg|cashier|abn|nzbn|store no|welcome)\b/,
-    disc: /\b(sav(e|ed|ing|ings)|discount|disc|dsc|promo|promotion|club ?card|club ?price|club ?deal|club|deal|special|multi ?buy|coupon|markdown|mkdn|reduced|voucher|rewards?|onecard|price ?match|less|off)\b/,
+    disc: /\b(pf|sav(e|ed|ing|ings)|discount|disc|dsc|promo|promotion|club ?card|club ?price|club ?deal|club|deal|special|multi ?buy|coupon|markdown|mkdn|reduced|voucher|rewards?|onecard|price ?match|less|off)\b/,
     qty: /^(?:qty\s*)?(\d{1,3})\s*(?:@|x|×|at)\s*\$?\s?(\d{1,4}[.,]\d{2})(?!\s*\/?\s*kg)/i,
     weight: /(\d{1,3}[.,]\d{1,3})\s*kg\b.*?\$?\s?(\d{1,4}[.,]\d{2})\s*(?:\/|per)\s*kg/i
   };
@@ -819,6 +829,8 @@ header.strip { overflow: hidden; }
     var totalGuess = false, items = [], skipped = [], total = null, ended = false, pending = null, wantTotal = false;
     function last() { return items[items.length - 1]; }
     function skip(t, why) { skipped.push({ text: t, why: why }); }
+    // A line that looked like it had an unreadable price but turned out to be the name for the price line under it
+    function unskip(p) { var k = p && p.unread ? skipped.indexOf(p.unread) : -1; if (k >= 0) skipped.splice(k, 1); }
     lines.forEach(function (line) {
       if (!line || (line.match(/[A-Za-z0-9]/g) || []).length < 2) return;
       var pr = priceAtEnd(line) || priceAtEnd(line, { guess: true }), low = line.toLowerCase().replace(/[^a-z0-9.\/@ ]+/g, ' ').replace(/\s+/g, ' ');
@@ -829,13 +841,22 @@ header.strip { overflow: hidden; }
       if (RE.total.test(low)) { if (pr) { total = pr.value; if (pr.guess) totalGuess = true; } else wantTotal = true; ended = true; skip(line, 'total'); return; }
       if (RE.end.test(low)) { ended = true; skip(line, 'payment'); return; }
       var wm = RE.weight.exec(line), qm = !wm && RE.qty.exec(line);
+      // A multi-buy line whose "@" was misread ("20  $5.49  $10.98", "2&  $5.49  $10.98"): no words, an each price and a line price
+      // that is a whole number of them. The count comes from the two prices, not from the misread digits.
+      if (!wm && !qm) {
+        var mb = /^(\d{1,2})\S{0,2}\s+\$\s?(\d{1,4}[.,]\d{2})\s+\$?\s?(\d{1,4}[.,]\d{2})(\s+\S{1,2})?$/.exec(line);
+        if (mb && letters(line.replace(/\s\S{1,2}$/, '')) === 0) {
+          var e1 = num(mb[2]), l1 = num(mb[3]), k = e1 > 0 ? Math.round(l1 / e1) : 0;
+          if (k >= 2 && k <= 99 && Math.abs(k * e1 - l1) < 0.005 && String(mb[1]).charAt(0) === String(k).charAt(0)) qm = [line, String(k), mb[2]];
+        }
+      }
       if (wm || qm) {
         var a = num(wm ? wm[1] : qm[1]), each = num(wm ? wm[2] : qm[2]);
         var tot = pr && Math.abs(pr.value - each) > 0.004 && /(@|x|×|at|kg)/i.test(pr.rest) ? pr.value : r2(a * each);
         if (qm && pr && Math.abs(pr.value - each) <= 0.004 && a > 1 && letters(pr.rest.replace(/\b(qty|x|at|ea|each)\b/gi, '')) === 0) tot = r2(a * each);
         var info = wm ? { kg: a, unit: each } : { count: a, each: each };
         var lp = last();
-        if (pending) { items.push(Object.assign({ name: pending.name, total: tot, discount: 0, lines: [pending.line, line] }, info)); pending = null; }
+        if (pending) { unskip(pending); items.push(Object.assign({ name: pending.name, total: tot, discount: 0, lines: [pending.line, line] }, info)); pending = null; }
         else if (lp && !lp.kg && !lp.count && Math.abs(lp.total - tot) <= 0.02 + lp.discount) { Object.assign(lp, info); lp.lines.push(line); }
         else { items.push(Object.assign({ name: wm ? 'Weighed item' : 'Item', total: tot, discount: 0, lines: [line], noName: true }, info)); }
         return;
@@ -851,7 +872,7 @@ header.strip { overflow: hidden; }
       if (pr) {
         var name = tidy(pr.rest.replace(/^[^A-Za-z0-9]+/, ''));
         if (letters(name) < 2) {
-          if (pending) { name = pending.name; pending = null; }
+          if (pending) { unskip(pending); name = pending.name; pending = null; }
           else { skip(line, 'price with no name'); return; }
         }
         if (pr.value === 0) { skip(line, 'zero price'); return; }
@@ -859,8 +880,10 @@ header.strip { overflow: hidden; }
         pending = null;
         return;
       }
-      if (letters(line) >= 3 && /\s\S*\d\S*$/.test(line) && /\d{2}\S*$/.test(line)) skip(line, 'price unreadable: type it in if this is one of your items');
-      if (letters(line) >= 3) pending = { name: tidy(line.replace(/^[^A-Za-z0-9]+/, '')), line: line };
+      if (items.length && /\d/.test(line) && (/(^|\s)[-~\u2212]\s?\$?\d/.test(line) || /^(pf|promo|club ?(deal|price|saving)|multi ?buy|discount|saving)\b|\b(saving|discount)\b/.test(low))) { skip(line, 'saving: amount unreadable, so it was not taken off. Type in the price paid'); pending = null; return; }
+      var unread = null;
+      if (letters(line) >= 3 && /\s\S*\d\S*$/.test(line) && /\d{2}\S*$/.test(line)) { skip(line, 'price unreadable: type it in if this is one of your items'); unread = skipped[skipped.length - 1]; }
+      if (letters(line) >= 3) pending = { name: tidy(line.replace(/^[^A-Za-z0-9]+/, '')), line: line, unread: unread };
     });
     // The same thing scanned twice shows as two lines: count them as one line with a quantity.
     var merged = [], byKey = {};
