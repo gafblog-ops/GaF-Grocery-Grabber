@@ -344,6 +344,8 @@ header.strip { overflow: hidden; }
 .rc-raw { font: 13px/1.35 ui-monospace, Menlo, monospace; background: #F6F2E4; border-radius: 8px; padding: 5px 8px; overflow-wrap: anywhere; }
 .rc-raw small { font-family: inherit; color: #666; }
 .rc-note { margin: 0; }
+.rc-same { border: 2.5px dashed var(--ink); border-radius: 10px; background: #FFF6C8; padding: 8px 10px; }
+.rc-same p { margin: 0 0 6px; } .rc-same .btns { margin: 0; flex-wrap: wrap; }
 .rc-nums { display: flex; gap: 8px; align-items: flex-end; } .rc-nums .f { flex: 1; min-width: 0; }
 .rc-each { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; padding-bottom: 12px; color: #333; }
 .rc-skip, .rc-text { margin: 10px 2px; } .rc-skip summary, .rc-text summary { font-weight: 800; cursor: pointer; min-height: 32px; }
@@ -815,23 +817,29 @@ header.strip { overflow: hidden; }
   var RE = {
     subtotal: /\bsub\s*-?\s*total\b|\bsubtl\b/,
     totalSaving: /\b(total|you)\s+(sav(ed|ings?)|discounts?)\b|\bsav(ed|ings?)\s+(today|total)\b/,
-    total: /\b(total|ttl|balance|bal due|amount due|amount payable|to pay)\b/,
-    end: /\b(eftpos|visa|mastercard|master card|amex|debit|credit card|cash|change|tender(ed)?|paywave|contactless|payment|paid by|rounding|approved|card no|acct)\b/,
+    total: /\b(total|ttl|balance|bal due|due|amount due|amount payable|to pay)\b/,
+    end: /^[a-z]{0,3}pos\b|\b(eftpos|visa|mastercard|master card|amex|debit|credit card|cash|change|tender(ed)?|paywave|contactless|payment|paid by|rounding|approved|card no|acct)\b/,
     info: /\b(gst|tax|items? sold|no\.? of items|number of items|item count|receipt|invoice|tel|phone|ph|www|thank|thanks|date|time|operator|register|lane|trans(action)?|reg|cashier|abn|nzbn|store no|welcome)\b/,
     disc: /\b(pf|sav(e|ed|ing|ings)|discount|disc|dsc|promo|promotion|club ?card|club ?price|club ?deal|club|deal|special|multi ?buy|coupon|markdown|mkdn|reduced|voucher|rewards?|onecard|price ?match|less|off)\b/,
     qty: /^(?:qty\s*)?(\d{1,3})\s*(?:@|x|×|at)\s*\$?\s?(\d{1,4}[.,]\d{2})(?!\s*\/?\s*kg)/i,
     weight: /(\d{1,3}[.,]\d{1,3})\s*kg\b.*?\$?\s?(\d{1,4}[.,]\d{2})\s*(?:\/|per)\s*kg/i
   };
 
+  /* The line the app puts between the text of two photos of one receipt. */
+  var PHOTO_MARK = '----- next photo -----';
+  function isPhotoMark(l) { return /^-{2,}\s*next photo\s*-{2,}$/i.test(tidy(l)); }
   /* Read receipt text into item lines. Totals, tax, payment and anything after the total are never items. */
   function parseReceipt(text) {
+    var photo = 0;
     var lines = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return tidy(l.replace(/[\u2014\u2013]/g, '-').replace(/[|]{2,}/g, ' ')); });
     var totalGuess = false, items = [], skipped = [], total = null, ended = false, pending = null, wantTotal = false;
     function last() { return items[items.length - 1]; }
+    function pushItem(it) { it.photo = photo; items.push(it); }
     function skip(t, why) { skipped.push({ text: t, why: why }); }
     // A line that looked like it had an unreadable price but turned out to be the name for the price line under it
     function unskip(p) { var k = p && p.unread ? skipped.indexOf(p.unread) : -1; if (k >= 0) skipped.splice(k, 1); }
     lines.forEach(function (line) {
+      if (isPhotoMark(line)) { photo++; return; }
       if (!line || (line.match(/[A-Za-z0-9]/g) || []).length < 2) return;
       var pr = priceAtEnd(line) || priceAtEnd(line, { guess: true }), low = line.toLowerCase().replace(/[^a-z0-9.\/@ ]+/g, ' ').replace(/\s+/g, ' ');
       if (wantTotal && pr && letters(pr.rest) === 0) { total = pr.value; wantTotal = false; skip(line, 'total'); return; }
@@ -856,9 +864,9 @@ header.strip { overflow: hidden; }
         if (qm && pr && Math.abs(pr.value - each) <= 0.004 && a > 1 && letters(pr.rest.replace(/\b(qty|x|at|ea|each)\b/gi, '')) === 0) tot = r2(a * each);
         var info = wm ? { kg: a, unit: each } : { count: a, each: each };
         var lp = last();
-        if (pending) { unskip(pending); items.push(Object.assign({ name: pending.name, total: tot, discount: 0, lines: [pending.line, line] }, info)); pending = null; }
+        if (pending) { unskip(pending); pushItem(Object.assign({ name: pending.name, total: tot, discount: 0, lines: [pending.line, line] }, info)); pending = null; }
         else if (lp && !lp.kg && !lp.count && Math.abs(lp.total - tot) <= 0.02 + lp.discount) { Object.assign(lp, info); lp.lines.push(line); }
-        else { items.push(Object.assign({ name: wm ? 'Weighed item' : 'Item', total: tot, discount: 0, lines: [line], noName: true }, info)); }
+        else { pushItem(Object.assign({ name: wm ? 'Weighed item' : 'Item', total: tot, discount: 0, lines: [line], noName: true }, info)); }
         return;
       }
       if (pr && (pr.neg || RE.disc.test(low))) {
@@ -876,7 +884,7 @@ header.strip { overflow: hidden; }
           else { skip(line, 'price with no name'); return; }
         }
         if (pr.value === 0) { skip(line, 'zero price'); return; }
-        items.push({ name: name, total: pr.value, discount: 0, lines: [line], guess: pr.guess || undefined });
+        pushItem({ name: name, total: pr.value, discount: 0, lines: [line], guess: pr.guess || undefined });
         pending = null;
         return;
       }
@@ -885,7 +893,10 @@ header.strip { overflow: hidden; }
       if (letters(line) >= 3 && /\s\S*\d\S*$/.test(line) && /\d{2}\S*$/.test(line)) { skip(line, 'price unreadable: type it in if this is one of your items'); unread = skipped[skipped.length - 1]; }
       if (letters(line) >= 3) pending = { name: tidy(line.replace(/^[^A-Za-z0-9]+/, '')), line: line, unread: unread };
     });
-    // The same thing scanned twice shows as two lines: count them as one line with a quantity.
+    // Two photos of one long receipt overlap: the lines at the top of the next photo were already read at the bottom of the one
+    // before. They are left out, so the overlap never adds a second chicken roll (or counts it as two).
+    if (photo > 0) items = dropOverlap(items, skipped);
+    // The same thing scanned twice shows as two lines (in one photo): count them as one line with a quantity.
     var merged = [], byKey = {};
     items.forEach(function (it) {
       var k = recKey(it.name) + '|' + it.total;
@@ -900,6 +911,58 @@ header.strip { overflow: hidden; }
     // Hard-to-read prices that make the lines add up exactly to a clearly read total are right: they stop being guesses.
     if (total != null && !totalGuess && Math.abs(sum - Math.round(total * 100)) === 0) merged.forEach(function (it) { if (it.guess) { delete it.guess; it.fits = true; } });
     return { items: merged, total: total, totalGuess: totalGuess, sum: sum / 100, skipped: skipped };
+  }
+
+  /* The same receipt line, read twice: same amount, and names that are the same words or one cut short at the edge of a photo. */
+  function sameLine(a, b) {
+    if (Math.abs(a.total - b.total) > 0.011) return false;
+    if (!!a.kg !== !!b.kg || (a.count || 1) !== (b.count || 1)) return false;
+    if (a.noName || b.noName) return true;
+    return sameRead(a.name, b.name);
+  }
+  /* Two names that are one receipt line read twice: the same words, misreads allowed, or one with its start cut off
+     ("ILLED CHICKEN" for "FRENCH STICK FILLED CHICKEN"). Different products that share words ("COKE 1.5L", "COKE ZERO 1.5L") are not. */
+  function sameRead(x, y) {
+    var A = toks(x), B = toks(y);
+    if (!A.length || !B.length) return false;
+    if (A.join(' ') === B.join(' ')) return true;
+    var S = A.length <= B.length ? A : B, L = S === A ? B : A, off = L.length - S.length;
+    for (var i = S.length - 1; i >= 0; i--) {
+      var sw = S[i], lw = L[off + i];
+      if (sw === lw || tokSim(lw, sw) >= 0.85) continue;
+      if (i === 0 && sw.length >= 2 && lw.length > sw.length && lw.slice(-sw.length) === sw) continue; // the first word cut short
+      if (/^\d/.test(sw) || /^\d/.test(lw)) return false;
+      if (dice(sw, lw) >= 0.6) continue; // a misread letter or two
+      return false;
+    }
+    // A name that is only one short word is too little to call it the same line
+    return S.length >= 2 || S[0].length >= 5;
+  }
+  function weightBit(it) { return !it.kg && /\bkg\b|@|\/\s*kg/i.test(it.name || '') && toks(it.name).filter(function (w) { return /^[a-z]{3,}$/.test(w) && w !== 'kg'; }).length === 0; }
+  function dropOverlap(items, skipped) {
+    var keep = [], maxP = 0;
+    items.forEach(function (it) { if (it.photo > maxP) maxP = it.photo; });
+    for (var k = 0; k <= maxP; k++) {
+      var B = items.filter(function (it) { return it.photo === k; });
+      if (k === 0 || !keep.length) { keep = keep.concat(B); continue; }
+      // The top line of the next photo is often the weight line of the last item before ("0.255 kg @ $4.20/kg"),
+      // half read; it is part of the overlap when the lines after it are.
+      var lead = 0;
+      while (lead < B.length && lead < 2 && weightBit(B[lead])) lead++;
+      var best = 0, from = 0;
+      for (var st = 0; st <= lead && !best; st++) {
+        var lim = Math.min(keep.length, B.length - st, 8);
+        for (var m = lim; m >= 1 && !best; m--) {
+          var ok = true;
+          for (var i = 0; i < m && ok; i++) ok = sameLine(keep[keep.length - m + i], B[st + i]);
+          if (ok) { best = m; from = st; }
+        }
+      }
+      var cut = best ? from + best : 0;
+      B.slice(0, cut).forEach(function (it) { skipped.push({ text: it.lines.join(' / '), why: 'already read in the photo before' }); });
+      keep = keep.concat(B.slice(cut));
+    }
+    return keep;
   }
 
   // ---------- matching receipt words to item names ----------
@@ -995,23 +1058,40 @@ header.strip { overflow: hidden; }
     rows = rows.map(function (r) {
       var it = trip.items[r.n], ln = r.j >= 0 ? parsed.items[r.j] : null;
       var p = ln ? proposal(it, ln) : { total: it.line == null ? null : it.line, qty: it.qty == null ? 1 : +it.qty, note: '' };
-      var conf = r.conf;
+      var conf = r.conf, ask = ln && conf === 'check'; // unsure the receipt words are this item: the person is asked
       if (ln && conf === 'good' && !ln.kg && !ln.count && (it.qty == null ? 1 : +it.qty) !== 1) conf = 'check';
       if (ln && ln.guess && conf !== 'none') { conf = 'check'; p.note = (p.note ? p.note + '. ' : '') + 'The price was hard to read: check it against the receipt'; }
       var on = !!ln && (conf === 'good' || conf === 'learned') && changed(it, p.qty, p.total);
       if (ln && conf === 'check') claimed[r.j] = it.name; // an unsure match: the line also shows as an extra purchase, so a wrong guess never hides it
       else if (ln) used[r.j] = 1;
-      return { n: r.n, j: r.j, conf: conf, score: r.score, qty: p.qty, total: p.total, note: p.note, on: on, touched: false };
+      var row = { n: r.n, j: r.j, conf: conf, score: r.score, qty: p.qty, total: p.total, note: p.note, on: on, touched: false };
+      // "Same item?" is asked, and until it is answered the line is neither this item's price nor an extra purchase.
+      if (ask) row.same = null;
+      return row;
     });
     /* Lines on the receipt that are not one of the items: things bought that were not on the list (a swap like Sprite for L&P).
        A clear line with a name and a price starts ticked, so it joins the trip and its total once Approve is tapped.
        A line an unsure row might be, or one whose price or name was hard to read, starts unticked. */
     var adds = parsed.items.filter(function (ln) { return !used[ln.i]; }).map(function (ln) {
-      var maybe = claimed[ln.i] || '';
-      var on = !maybe && !ln.noName && !ln.guess && ln.total > 0;
-      return { j: ln.i, on: on, extra: true, maybe: maybe, name: niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(niceName(ln.name), recs) };
+      var maybe = claimed[ln.i] || '', dup = dupOf(ln, trip, parsed);
+      var on = !maybe && !dup && !ln.noName && !ln.guess && ln.total > 0;
+      var a = { j: ln.i, on: on, extra: true, maybe: maybe, name: niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(niceName(ln.name), recs) };
+      if (dup) a.dup = dup;
+      return a;
     });
     return { rows: rows, adds: adds };
+  }
+  /* A receipt line that looks like another line, or an item already on the trip, read a second time:
+     same amount and the same words or the same words cut short. It starts unticked so it is never added twice without a tap. */
+  function dupOf(ln, trip, parsed) {
+    if (ln.noName) return '';
+    var hit = '';
+    parsed.items.forEach(function (o) { if (!hit && o.i < ln.i && !o.noName && sameLine(o, ln)) hit = niceName(o.name); });
+    (trip.items || []).forEach(function (it) {
+      if (hit || it.price == null) return;
+      if (Math.abs(G.lineCents(it) / 100 - ln.total) <= 0.011 && sameRead(it.name, ln.name)) hit = it.name;
+    });
+    return hit;
   }
   function changed(it, qty, total) {
     var q0 = it.qty == null ? 1 : +it.qty;
@@ -1092,7 +1172,7 @@ header.strip { overflow: hidden; }
     var ch = {}; ch['t:' + tripId] = nt; return ch;
   }
 
-  var api = { cartTrip: cartTrip, finishWithReceipt: finishWithReceipt, undoReceipt: undoReceipt, proposal: proposal, recKey: recKey, priceAtEnd: priceAtEnd, parseReceipt: parseReceipt, toks: toks, nameScore: nameScore, matchTrip: matchTrip, buildReview: buildReview, applyReceipt: applyReceipt, eachFrom: eachFrom, niceName: niceName, aliasKey: aliasKey, changed: changed };
+  var api = { cartTrip: cartTrip, finishWithReceipt: finishWithReceipt, undoReceipt: undoReceipt, proposal: proposal, recKey: recKey, priceAtEnd: priceAtEnd, parseReceipt: parseReceipt, toks: toks, nameScore: nameScore, matchTrip: matchTrip, buildReview: buildReview, applyReceipt: applyReceipt, eachFrom: eachFrom, niceName: niceName, aliasKey: aliasKey, changed: changed, sameRead: sameRead, PHOTO_MARK: PHOTO_MARK };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GGR = api;
 })(typeof window !== 'undefined' ? window : this);
@@ -2124,6 +2204,11 @@ header.strip { overflow: hidden; }
       case 'rcno': finishPlain(); break;
       case 'rcback': if (ui.sheet && ui.sheet.type === 'complete') { ui.sheet.step = ''; ui.sheet.fresh = true; renderSheet(); } else if (ui.sheet && ui.sheet.back) { var bk = ui.sheet.back; ocr.job++; bk.step = 'ask'; bk.fresh = true; openSheet(bk); } break;
       case 'rcstop': if (ui.sheet) { ocr.job++; ui.sheet.step = ui.sheet.text ? 'review' : 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcsame': if (ui.sheet && ui.sheet.rows) {
+        var sp = String(v).split(':'), srow = ui.sheet.rows[+sp[0]]; if (!srow) break;
+        var yes = sp[1] === '1'; srow.same = yes; srow.on = yes;
+        var sa = ui.sheet.adds && ui.sheet.adds[srow.j]; if (sa) sa.on = !yes; // No: the line joins the trip as its own item
+        renderSheet(); } break;
       case 'rcmanual': if (ui.sheet) { ui.sheet.manual = true; ui.sheet.text = ''; rcReview(ui.sheet); } break;
       case 'rcreparse': if (ui.sheet) { var ta = $('rcText'); ui.sheet.text = ta ? ta.value : ui.sheet.text; ui.sheet.manual = true; rcReview(ui.sheet); } break;
       case 'rcnew': if (ui.sheet) { ui.sheet.text = ''; ui.sheet.parsed = null; ui.sheet.manual = false; ui.sheet.err = ''; ui.sheet.step = 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
@@ -2324,7 +2409,8 @@ header.strip { overflow: hidden; }
     }).then(function (res) {
       if (job !== ocr.job || !rcSheetOpen(s.id, s)) return;
       var text = (res && res.data && res.data.text) || '';
-      s.text = s.text ? s.text.replace(/\s*$/, '\n') + text : text;
+      // A second photo of the same receipt: a marker line between them, so lines the two photos overlap on are read once.
+      s.text = s.text ? s.text.replace(/\s*$/, '\n') + GGR.PHOTO_MARK + '\n' + text : text;
       rcReview(s);
     }, function (err) {
       if (job !== ocr.job || !rcSheetOpen(s.id, s)) return;
@@ -2357,7 +2443,7 @@ header.strip { overflow: hidden; }
   }
   /* A receipt line belongs to a row when that row is ticked or is a sure match (one with nothing to change starts unticked).
      Only an unticked unsure row lets go of its line, so the line also shows under Not on your list. */
-  function rcHolds(r) { return r.on || r.conf !== 'check'; }
+  function rcHolds(r) { return r.on || r.conf !== 'check' || r.same === null; }
   function rcUsed(s, j) { return (s.rows || []).some(function (r) { return r.j === j && rcHolds(r); }); }
   /* What the trip will total once Approve is tapped, from what is ticked now. */
   function rcAfter(s) {
@@ -2402,6 +2488,7 @@ header.strip { overflow: hidden; }
       h += '<div class="f"><label for="rcL' + k + '">Receipt line</label><select id="rcL' + k + '" data-rc="line" data-k="' + k + '">' + opts(row.j) + '</select></div>';
       if (ln) h += '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>';
       if (row.note) h += '<p class="tiny muted rc-note">' + esc(row.note) + '</p>';
+      if (ln && row.same === null) h += '<div class="rc-same" role="group" aria-label="Same item?"><p><b>Same item?</b> Is <b>' + esc(GGR.niceName(ln.name)) + '</b> on the receipt your <b>' + esc(it.name) + '</b>?</p><div class="btns"><button type="button" class="btn small pri" data-a="rcsame" data-v="' + k + ':1">Yes, same item</button><button type="button" class="btn small" data-a="rcsame" data-v="' + k + ':0">No, add it separately</button></div></div>';
       h += '<div class="row rc-nums"><div class="f"><label for="rcQ' + k + '">Qty</label><input id="rcQ' + k + '" data-rc="qty" data-k="' + k + '" inputmode="decimal" value="' + esc(row.qty == null || isNaN(row.qty) ? (row.qtyText || '') : G.qtyText(row.qty)) + '"></div>' +
         '<div class="f"><label for="rcT' + k + '">Paid (line)</label><input id="rcT' + k + '" data-rc="total" data-k="' + k + '" inputmode="decimal" placeholder="0.00" value="' + esc(row.total == null || isNaN(row.total) ? (row.totalText || '') : row.total.toFixed(2)) + '"></div>' +
         '<div class="rc-each" id="rcE' + k + '">' + rcEach(row.total, row.qty) + '</div></div></div>';
@@ -2414,7 +2501,8 @@ header.strip { overflow: hidden; }
         var a = s.adds[ln.i] || (s.adds[ln.i] = { j: ln.i, on: false, extra: true, maybe: '', name: GGR.niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(GGR.niceName(ln.name), R()) }), j = ln.i;
         var mb = (s.rows || []).filter(function (r) { return r.j === j && !rcHolds(r); }).map(function (r) { return t.items[r.n] && t.items[r.n].name; })[0] || '';
         h += '<div class="rc-row add rc-extra' + (a.on ? ' on' : '') + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="aon" data-j="' + j + '"' + (a.on ? ' checked' : '') + '><span><b class="rc-xname" id="rcAX' + j + '">' + esc(a.name || 'Unnamed line') + '</b><small>Add to this trip · ' + (a.total == null || isNaN(a.total) ? 'no amount' : G.money(a.total)) + '</small></span></label><span class="rc-conf extra">Not on list</span></div>' +
-          (mb ? '<p class="tiny rc-note">Might be <b>' + esc(mb) + '</b> from your list. If it is, tick that row above instead.</p>' : '') + '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
+          (mb ? '<p class="tiny rc-note">Might be <b>' + esc(mb) + '</b> from your list. If it is, tick that row above instead.</p>' : '') +
+          (a.dup ? '<p class="tiny rc-note rc-dup">Looks like <b>' + esc(a.dup) + '</b> read twice, so it starts unticked. Tick it only if you bought two.</p>' : '') + '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
           '<div class="f"><label for="rcAN' + j + '">Name</label><input id="rcAN' + j + '" data-rc="aname" data-j="' + j + '" value="' + esc(a.name) + '"></div>' +
           '<div class="row rc-nums"><div class="f"><label for="rcAC' + j + '">Category</label><select id="rcAC' + j + '" data-rc="acat" data-j="' + j + '">' + cats.map(function (c) { return '<option' + (c === a.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div></div>' +
           '<div class="row rc-nums"><div class="f"><label for="rcAQ' + j + '">Qty</label><input id="rcAQ' + j + '" data-rc="aqty" data-j="' + j + '" inputmode="decimal" value="' + esc(a.qty == null || isNaN(a.qty) ? (a.qtyText || '') : G.qtyText(a.qty)) + '"></div><div class="f"><label for="rcAT' + j + '">Paid (line)</label><input id="rcAT' + j + '" data-rc="atotal" data-j="' + j + '" inputmode="decimal" value="' + esc(a.total == null || isNaN(a.total) ? (a.totalText || '') : a.total.toFixed(2)) + '"></div></div></div>';
@@ -2445,10 +2533,10 @@ header.strip { overflow: hidden; }
     var tick = function (el) { var box = el.closest('.rc-row'); var cb = box && box.querySelector('input[type=checkbox]'); if (cb && !cb.checked) { cb.checked = true; box.classList.add('on'); } };
     if (row && f === 'on') {
       row.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked);
-      if (row.j >= 0 && row.conf === 'check') { if (row.on && s.adds[row.j]) s.adds[row.j].on = false; renderSheet(); return true; } // the line moves between this row and Not on your list
+      if (row.j >= 0 && row.conf === 'check') { if (row.same !== undefined) row.same = row.on; if (row.on && s.adds[row.j]) s.adds[row.j].on = false; else if (!row.on && row.same === false && s.adds[row.j]) s.adds[row.j].on = true; renderSheet(); return true; } // the line moves between this row and Not on your list
     }
-    else if (row && f === 'qty') { row.qtyText = t.value; var q = G.parseQty(t.value); row.qty = q; row.on = true; tick(t); }
-    else if (row && f === 'total') { row.totalText = t.value; var m = G.parseMoney(t.value); row.total = m == null ? NaN : m; row.on = true; tick(t); }
+    else if (row && f === 'qty') { row.qtyText = t.value; var q = G.parseQty(t.value); row.qty = q; row.on = true; if (row.same === null) row.same = true; tick(t); }
+    else if (row && f === 'total') { row.totalText = t.value; var m = G.parseMoney(t.value); row.total = m == null ? NaN : m; row.on = true; if (row.same === null) row.same = true; tick(t); }
     else if (a && f === 'aon') { a.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); if (a.on) s.rows.forEach(function (o) { if (o.j === a.j && !rcHolds(o)) { o.j = -1; o.conf = 'none'; o.note = ''; } }); }
     else if (a && f === 'aname') { a.name = t.value; var xn = layer.querySelector('#rcAX' + a.j); if (xn) xn.textContent = t.value || 'Unnamed line'; }
     else if (a && f === 'acat') { a.cat = t.value; }
@@ -2460,7 +2548,7 @@ header.strip { overflow: hidden; }
   function rcPickLine(t) {
     var s = ui.sheet, k = +t.getAttribute('data-k'), row = s.rows[k], j = +t.value, tr = rcTrip(s); if (!row || !tr) return;
     if (j >= 0) s.rows.forEach(function (o, m) { if (m !== k && o.j === j) { o.j = -1; o.on = false; o.conf = 'none'; o.note = ''; } });
-    row.j = j;
+    row.j = j; delete row.same;
     var it = tr.items[row.n], ln = rcLine(s, j);
     if (ln) { var pr = GGR.proposal(it, ln); row.qty = pr.qty; row.total = pr.total; row.note = pr.note; row.conf = 'picked'; row.on = GGR.changed(it, pr.qty, pr.total); }
     else { row.conf = 'none'; row.note = ''; row.on = false; row.qty = it.qty == null ? 1 : +it.qty; row.total = it.price == null ? null : G.lineCents(it) / 100; }
