@@ -349,6 +349,12 @@ header.strip { overflow: hidden; }
 .rc-skip, .rc-text { margin: 10px 2px; } .rc-skip summary, .rc-text summary { font-weight: 800; cursor: pointer; min-height: 32px; }
 .rc-text textarea { min-height: 150px; font: 14px/1.4 ui-monospace, Menlo, monospace; resize: vertical; }
 .rc-go { margin-top: 12px; position: sticky; bottom: 0; background: linear-gradient(transparent, #fff 30%); padding-top: 10px; }
+.rc-extra .rc-xname { font-weight: 900; font-size: 16px; }
+.rc-extra input[data-rc=aname] { font-weight: 800; }
+.rc-conf.extra { background: #FFD6F0; }
+.prow.rc-extra .nm > b { font-weight: 900; }
+.rc-after { margin: 8px 2px; font-size: 14px; }
+.rc-ask .big { font-size: 18px; font-weight: 800; margin: 6px 0; }
 .rc-tag { display: inline-block; padding: 0 5px; border-radius: 5px; background: var(--lime); color: #000; font-size: 11px; font-weight: 800; }
 .rc-done { margin: 6px 0 0; }
 </style>
@@ -611,6 +617,14 @@ header.strip { overflow: hidden; }
 
   // ---------- finishing a trip ----------
   function todayISO(d) { d = d || new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  /* The cart as the lines of a trip, in cart order (the receipt check before finishing uses the same lines). */
+  function cartLines(recs) {
+    return items(recs, 'cart').map(function (it) {
+      var o = { name: it.name, qty: it.qty == null ? 1 : it.qty, price: it.price, cat: catOf(it), line: lineCents(it) / 100 };
+      if (it.barcode) o.barcode = it.barcode;
+      return o;
+    });
+  }
   /* Everything in the cart goes into history; the trash is emptied; whatever is still on the list stays. */
   function completeTrip(recs, f, now) {
     now = now || Date.now();
@@ -621,12 +635,8 @@ header.strip { overflow: hidden; }
     var branch = canonicalBranch(recs, store, f.branch);
     var date = f.date && /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? f.date : todayISO(new Date(now));
     var id = f.id || uid(), totalC = 0;
-    var bought = cart.map(function (it) {
-      var line = lineCents(it); totalC += line;
-      var o = { name: it.name, qty: it.qty == null ? 1 : it.qty, price: it.price, cat: catOf(it), line: line / 100 };
-      if (it.barcode) o.barcode = it.barcode;
-      return o;
-    });
+    var bought = cartLines(recs);
+    bought.forEach(function (o) { totalC += lineCents(o); });
     var ch = Object.assign({}, rememberStore(recs, store, branch));
     ch['t:' + id] = { id: id, date: date, done: now, store: store, branch: branch, total: totalC / 100, limit: limit(recs), items: bought };
     cart.forEach(function (it) { ch['i:' + it.id] = null; });
@@ -739,7 +749,7 @@ header.strip { overflow: hidden; }
     addItem: addItem, editItem: editItem, moveItem: moveItem, placeInList: placeInList, emptyTrash: emptyTrash, emptyCart: emptyCart, deleteItem: deleteItem, setLimit: setLimit,
     stores: stores, branches: branches, rememberStore: rememberStore, canonicalStore: canonicalStore,
     todayISO: todayISO, completeTrip: completeTrip, trips: trips, purchases: purchases, lastPrice: lastPrice, knownNames: knownNames, findByBarcode: findByBarcode,
-    filterPurchases: filterPurchases, report: report, priceHistory: priceHistory, historyCSV: historyCSV, apply: apply
+    filterPurchases: filterPurchases, report: report, priceHistory: priceHistory, historyCSV: historyCSV, apply: apply, cartLines: cartLines
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GG = api;
@@ -775,6 +785,8 @@ header.strip { overflow: hidden; }
     if (!m && opts && opts.guess) {
       var g = /^\$?(\d{1,3})[7214](\d{2})$/.exec(last);
       if (g) { m = [last, '', '', g[1], g[2], '', '']; guess = true; }
+      // The decimal point lost altogether ("3.29" read as "329"): three digits only, on a line with words, flagged as a guess.
+      else if ((g = /^\$?(\d)(\d{2})$/.exec(last))) { m = [last, '', '', g[1], g[2], '', '']; guess = true; }
     }
     if (!m || !/\d/.test(m[3] + m[4])) return null;
     var fix = function (s) { return s.replace(/[^0-9]/g, function (c) { return DIGITISH[c] || c; }); };
@@ -862,6 +874,8 @@ header.strip { overflow: hidden; }
     });
     merged.forEach(function (it, i) { it.i = i; });
     var sum = 0; merged.forEach(function (it) { sum += Math.round(it.total * 100); });
+    // Hard-to-read prices that make the lines add up exactly to a clearly read total are right: they stop being guesses.
+    if (total != null && !totalGuess && Math.abs(sum - Math.round(total * 100)) === 0) merged.forEach(function (it) { if (it.guess) { delete it.guess; it.fits = true; } });
     return { items: merged, total: total, totalGuess: totalGuess, sum: sum / 100, skipped: skipped };
   }
 
@@ -954,19 +968,25 @@ header.strip { overflow: hidden; }
 
   /* Everything the review screen starts with. Only sure matches are ticked; nothing is saved by this. */
   function buildReview(recs, trip, parsed) {
-    var rows = matchTrip(recs, trip, parsed), used = {};
+    var rows = matchTrip(recs, trip, parsed), used = {}, claimed = {};
     rows = rows.map(function (r) {
       var it = trip.items[r.n], ln = r.j >= 0 ? parsed.items[r.j] : null;
-      if (ln) used[r.j] = 1;
       var p = ln ? proposal(it, ln) : { total: it.line == null ? null : it.line, qty: it.qty == null ? 1 : +it.qty, note: '' };
       var conf = r.conf;
       if (ln && conf === 'good' && !ln.kg && !ln.count && (it.qty == null ? 1 : +it.qty) !== 1) conf = 'check';
       if (ln && ln.guess && conf !== 'none') { conf = 'check'; p.note = (p.note ? p.note + '. ' : '') + 'The price was hard to read: check it against the receipt'; }
       var on = !!ln && (conf === 'good' || conf === 'learned') && changed(it, p.qty, p.total);
+      if (ln && conf === 'check') claimed[r.j] = it.name; // an unsure match: the line also shows as an extra purchase, so a wrong guess never hides it
+      else if (ln) used[r.j] = 1;
       return { n: r.n, j: r.j, conf: conf, score: r.score, qty: p.qty, total: p.total, note: p.note, on: on, touched: false };
     });
+    /* Lines on the receipt that are not one of the items: things bought that were not on the list (a swap like Sprite for L&P).
+       A clear line with a name and a price starts ticked, so it joins the trip and its total once Approve is tapped.
+       A line an unsure row might be, or one whose price or name was hard to read, starts unticked. */
     var adds = parsed.items.filter(function (ln) { return !used[ln.i]; }).map(function (ln) {
-      return { j: ln.i, on: false, name: niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(niceName(ln.name), recs) };
+      var maybe = claimed[ln.i] || '';
+      var on = !maybe && !ln.noName && !ln.guess && ln.total > 0;
+      return { j: ln.i, on: on, extra: true, maybe: maybe, name: niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(niceName(ln.name), recs) };
     });
     return { rows: rows, adds: adds };
   }
@@ -977,7 +997,7 @@ header.strip { overflow: hidden; }
   }
   function niceName(s) {
     s = tidy(s);
-    if (s === s.toUpperCase()) s = s.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }).replace(/\b(\d+)(Ml|L|G|Kg|Pk)\b/g, function (m, d, u) { return d + u.toLowerCase().replace(/^l$/, 'L'); });
+    if (s === s.toUpperCase()) s = s.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }).replace(/(\d)(ml|l|g|kg|pk)\b/gi, function (m, d, u) { return d + u.toLowerCase().replace(/^l$/, 'L'); });
     return s;
   }
   /* Price each from a line total, kept to 4 places so qty × price comes back to the exact total paid. */
@@ -1016,6 +1036,23 @@ header.strip { overflow: hidden; }
     return { ch: ch, changed: changedN, added: addedN, total: nt.total };
   }
 
+  /* The cart as a trip that is not saved yet, for checking the receipt before the shop is finished. */
+  function cartTrip(recs, f) {
+    var items = G.cartLines(recs), c = 0; items.forEach(function (x) { c += G.lineCents(x); });
+    f = f || {};
+    return { id: 'cart', cart: true, store: f.store || '', branch: f.branch || '', date: f.date || G.todayISO(), total: c / 100, items: items };
+  }
+  /* Finish the shop with the approved receipt changes in one go: the cart becomes a trip (exactly as Shopping complete does),
+     then the approved prices and extra purchases go onto that trip, so its total is what was paid. One change, one undo. */
+  function finishWithReceipt(recs, f, d, now) {
+    now = now || Date.now();
+    var id = f.id || G.uid();
+    var done = G.completeTrip(recs, Object.assign({}, f, { id: id }), now);
+    var r2 = G.apply(recs, done);
+    var res = applyReceipt(r2, id, d, now);
+    return { ch: Object.assign({}, done, res.ch), id: id, changed: res.changed, added: res.added, total: res.total, wasTotal: r2['t:' + id].total };
+  }
+
   /* Put a trip back the way it was before any receipt changes. Learned receipt names are kept. */
   function undoReceipt(recs, tripId) {
     var t = recs['t:' + tripId]; if (!t) throw new Error('That trip has gone.');
@@ -1032,7 +1069,7 @@ header.strip { overflow: hidden; }
     var ch = {}; ch['t:' + tripId] = nt; return ch;
   }
 
-  var api = { undoReceipt: undoReceipt, proposal: proposal, recKey: recKey, priceAtEnd: priceAtEnd, parseReceipt: parseReceipt, toks: toks, nameScore: nameScore, matchTrip: matchTrip, buildReview: buildReview, applyReceipt: applyReceipt, eachFrom: eachFrom, niceName: niceName, aliasKey: aliasKey, changed: changed };
+  var api = { cartTrip: cartTrip, finishWithReceipt: finishWithReceipt, undoReceipt: undoReceipt, proposal: proposal, recKey: recKey, priceAtEnd: priceAtEnd, parseReceipt: parseReceipt, toks: toks, nameScore: nameScore, matchTrip: matchTrip, buildReview: buildReview, applyReceipt: applyReceipt, eachFrom: eachFrom, niceName: niceName, aliasKey: aliasKey, changed: changed };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.GGR = api;
 })(typeof window !== 'undefined' ? window : this);
@@ -1714,7 +1751,7 @@ header.strip { overflow: hidden; }
         var open = ui.open[t.id], over = t.limit && t.total > t.limit;
         h += '<div class="trip"><button class="hd" data-a="trip" data-v="' + esc(t.id) + '" aria-expanded="' + !!open + '"><div class="w"><div class="st">' + esc(t.store) + (t.branch ? ' ' + esc(t.branch) : '') + '</div><div class="d">' + fmtDate(t.date) + ' · ' + t.items.length + ' item' + (t.items.length === 1 ? '' : 's') + (t.limit ? ' · limit ' + G.money(t.limit) : '') + (over ? ' <span class="over-tag">OVER</span>' : '') + '</div></div><span class="amt">' + G.money(t.total) + '</span></button>';
         if (open) {
-          h += '<div class="body">' + t.items.map(function (p) { return '<div class="prow"><div class="nm">' + esc(p.name) + '<small>' + esc(p.cat) + (p.barcode ? ' · ' + esc(p.barcode) : '') + (p.fromReceipt ? ' · <span class="rc-tag">added from receipt</span>' : p.was ? ' · <span class="rc-tag">receipt price</span> ' + (p.was.price == null ? 'had no price' : 'was ' + G.money(G.lineCents(p.was) / 100)) : '') + '</small></div><div class="v">' + G.money(p.line) + '<small>' + esc(qp(p)) + '</small></div></div>'; }).join('') +
+          h += '<div class="body">' + t.items.map(function (p) { return '<div class="prow' + (p.fromReceipt ? ' rc-extra' : '') + '"><div class="nm">' + (p.fromReceipt ? '<b>' + esc(p.name) + '</b>' : esc(p.name)) + '<small>' + esc(p.cat) + (p.barcode ? ' · ' + esc(p.barcode) : '') + (p.fromReceipt ? ' · <span class="rc-tag">not on your list · added from receipt</span>' : p.was ? ' · <span class="rc-tag">receipt price</span> ' + (p.was.price == null ? 'had no price' : 'was ' + G.money(G.lineCents(p.was) / 100)) : '') + '</small></div><div class="v">' + G.money(p.line) + '<small>' + esc(qp(p)) + '</small></div></div>'; }).join('') +
             (t.receipt ? '<p class="tiny muted rc-done">Prices checked against the receipt' + (t.receipt.total != null ? ' (receipt total ' + G.money(t.receipt.total) + ')' : '') + '. Before the receipt: ' + G.money(t.wasTotal != null ? t.wasTotal : t.total) + '.</p>' : '') +
             '<div class="btns"><button class="btn small" data-a="rcpt" data-v="' + esc(t.id) + '">📷 ' + (t.receipt ? 'Scan the receipt again' : 'Scan the receipt') + '</button>' + (t.receipt ? '<button class="btn small" data-a="rcundo" data-v="' + esc(t.id) + '">Undo receipt prices</button>' : '') + '<button class="btn small" data-a="again" data-v="' + esc(t.id) + '">Add all to list again</button><button class="btn small danger" data-a="deltrip" data-v="' + esc(t.id) + '">Delete trip</button></div></div>';
         }
@@ -1828,6 +1865,13 @@ header.strip { overflow: hidden; }
     }).join('') + '</div><div class="btns"><button class="btn danger wide" data-a="emptytrash">Empty trash (' + items.length + ')</button></div>';
   }
   function completeSheet(s) {
+    if (s.step === 'ask') {
+      var c = G.totals(R());
+      if (!c.cartCount) return '<p class="muted">The cart is empty now, so there is nothing to finish.</p>';
+      return '<div class="panel rc-ask"><p><b>' + esc(s.done.store) + (s.done.branch ? ' ' + esc(s.done.branch) : '') + '</b>, ' + fmtDate(s.done.date) + ' · ' + c.cartCount + ' item' + (c.cartCount === 1 ? '' : 's') + ' · ' + G.money(c.cart) + '</p>' +
+        '<p class="big">Do you have the receipt to scan?</p><p>Scanning it checks your cart against what you paid, adds anything you bought that wasn\'t on your list, and finishes the shop with the receipt\'s total. You approve every change first.</p></div>' +
+        '<div class="btns"><button type="button" class="btn go wide" data-a="rcyes">📷 Scan the receipt</button><button type="button" class="btn wide" data-a="rcno">No receipt, finish the shop</button><button type="button" class="btn small" data-a="rcback">Back</button></div>';
+    }
     var r = R(), stores = G.stores(r), t = G.totals(r), lim = G.limit(r);
     var store = s.store || '', isOther = store === '__other';
     var br = store && !isOther ? G.branches(r, store) : [];
@@ -1870,8 +1914,8 @@ header.strip { overflow: hidden; }
     ['move', 'List, cart and trash', '<ul><li><b>Into the cart:</b> tap the cart button on the right of an item.</li><li><b>Drag it:</b> on the iPhone, press and hold an item, then slide it onto the cart, the bin or another category. On the Mac, click and drag.</li><li><b>Change category:</b> drag an item into another category and it stays there next time.</li><li><b>Changed your mind?</b> Tap <b>Undo</b> on the message at the bottom, or open the cart and tap an item for <b>Back to list</b> or <b>Trash</b>.</li></ul>'],
     ['totals', 'Cart total and the List amount', '<ul><li><b>The cart total</b> (in the black box on the cart) is what is in your trolley now.</li><li><b>List</b>, under the limit bar, is roughly what is still on your list. Items with no price yet show as "+ unpriced".</li><li><b>Spending limit:</b> tap <b>Set a spending limit</b> to choose an amount for this shop. The bar shows how much is left.</li></ul><div class="lvkey"><span><span class="k green">Green</span>under 75% of the limit</span><span><span class="k amber">Yellow</span>from 75%</span><span><span class="k orange">Orange</span>from 90%</span><span><span class="k red">Red</span>over the limit</span></div>'],
     ['trash', 'Empty cart and the trash', '<ul><li><b>Empty cart</b> (in the cart) asks first, then moves everything to the trash, not gone.</li><li>Open the <b>bin</b> at the bottom of your list to see the trash. Tap an item for <b>Back to list</b> or <b>Back to cart</b>.</li><li>Nothing is gone for good until you tap <b>Empty trash</b>, or finish a shop with <b>Shopping complete</b>, which empties the trash.</li></ul>'],
-    ['done', 'Shopping complete', '<ul><li>Open the cart and tap <b>Shopping complete</b>.</li><li>Choose the <b>store</b>, then the <b>branch</b>. A new store or branch is typed once (use <b>Other…</b> or <b>New branch…</b>) and remembered after that.</li><li>Check the date and tap <b>Complete</b>. The cart goes into your history with its prices, and anything still on your list stays there for next time.</li></ul>'],
-    ['receipt', 'Scanning the receipt', '<ul><li>After <b>Shopping complete</b>, the app offers to scan the receipt. Tap <b>Not now</b> to skip: you can do it later from <b>History</b>, by opening the trip and tapping <b>Scan the receipt</b>.</li><li>Take a photo with the receipt flat, in good light, filling the screen. The photo is read on your phone, not uploaded. The first scan downloads the reader, so it needs the internet and takes a little longer.</li><li><b>You approve every change.</b> Each item shows what it was, the receipt line it matched and the new amount. Sure matches start ticked. <b>Check this</b> rows start unticked: look, fix the qty or amount if needed, and tick them. Change the receipt line in the menu if it picked the wrong one.</li><li>Savings and club prices on the receipt come off the item above them. Weighed items use the kg on the receipt. Totals, GST and payment lines are never counted as items. If the lines found do not add up to the receipt total, it tells you.</li><li>Lines on the receipt that are not on the trip can be ticked to add them.</li><li>Nothing changes until you tap <b>Approve</b>, and only that trip changes: your list and your other trips stay as they are. The approved prices then show in History, Reports and the price history.</li><li>If it misreads something, open <b>The text it read</b>, fix it and tap <b>Read again</b>, or just type the amounts in the boxes. <b>Type the prices in myself</b> skips the photo. <b>Undo receipt prices</b> in the trip puts it back.</li><li>It learns: when you approve a receipt line as one of your items, it matches it straight away next time at that store.</li></ul>'],
+    ['done', 'Shopping complete', '<ul><li>Open the cart and tap <b>Shopping complete</b>.</li><li>Choose the <b>store</b>, then the <b>branch</b>. A new store or branch is typed once (use <b>Other…</b> or <b>New branch…</b>) and remembered after that.</li><li>Check the date and tap <b>Complete</b>. It then asks if you have the receipt to scan. Tap <b>Scan the receipt</b> to check the prices before the shop is finished (see the next topic), or <b>No receipt, finish the shop</b>.</li><li>The cart goes into your history with its prices, and anything still on your list stays there for next time.</li></ul>'],
+    ['receipt', 'Scanning the receipt', '<ul><li>With your shopping in the cart, tap <b>Shopping complete</b>, pick the store and tap <b>Complete</b>. When it asks, tap <b>Scan the receipt</b>. The shop is not finished yet: the receipt is checked against your cart first, so the trip saves with the prices you paid.</li><li>Forgot the receipt? Tap <b>No receipt, finish the shop</b>. You can scan it later from <b>History</b>, by opening the trip and tapping <b>Scan the receipt</b>.</li><li>Take a photo with the receipt flat, in good light, filling the screen. The photo is read on your phone, not uploaded. The first scan downloads the reader, so it needs the internet and takes a little longer.</li><li><b>You approve every change.</b> Each item shows what it was, the receipt line it matched and the new amount. Sure matches start ticked. <b>Check this</b> rows start unticked: look, fix the qty or amount if needed, and tick them. Change the receipt line in the menu if it picked the wrong one.</li><li>Savings and club prices on the receipt come off the item above them. Weighed items use the kg on the receipt. Totals, GST and payment lines are never counted as items. If the lines found do not add up to the receipt total, it tells you.</li><li><b>Bought something that wasn\'t on your list?</b> A swap (Sprite because the L&amp;P was out) or an extra shows under <b>Not on your list</b>, in bold, ready to add. Clear lines start ticked; untick any you don\'t want. Once approved they count in the trip total like any other item and show in <b>bold</b> in History, so the spontaneous buys are easy to spot. Anything on your list that you didn\'t buy stays on your list.</li><li>A line that might be one of your items, but the app isn\'t sure, shows in both places, unticked: tick the one that is right.</li><li>Nothing changes until you tap <b>Approve</b>. From the cart, Approve also finishes the shop, and the trip total then matches the receipt. Only that trip changes: your list and your other trips stay as they are. The approved prices then show in History, Reports and the price history.</li><li>If it misreads something, open <b>The text it read</b>, fix it and tap <b>Read again</b>, or just type the amounts in the boxes. <b>Type the prices in myself</b> skips the photo. <b>Undo receipt prices</b> in the trip puts it back.</li><li>It learns: when you approve a receipt line as one of your items, it matches it straight away next time at that store.</li></ul>'],
     ['hist', 'History', '<ul><li><b>Trips</b> lists each shop with the store, date and total. Tap one to see what you bought. <b>Add all to list again</b> puts the lot back on your list.</li><li><b>Every item</b> lets you search and filter by category, store and time.</li><li>Tap any item to see its <b>price history</b>: what you paid, when and where.</li></ul>'],
     ['rep', 'Reports and export', '<ul><li><b>Reports</b> shows trips, total spent and spend per trip, your most popular items, spending by category and by store. Filter by time, category and store.</li><li><b>Export:</b> in the <b>More</b> tab, tap <b>Export history (CSV)</b> for a spreadsheet of everything you\'ve bought, with date, store, branch, price and barcode.</li></ul>'],
     ['order', 'Changing category order', '<ul><li>Tap the <b>cog</b>, then <b>Category order</b> (or <b>Change category order</b> in More).</li><li>Use ▲ and ▼ to move a category. Your list and menus follow straight away.</li><li><b>Reset to the standard order</b> puts it back. Items always stay in their own category.</li></ul>'],
@@ -2053,6 +2097,9 @@ header.strip { overflow: hidden; }
       case 'hist': ui.hist = v; render(); break;
       case 'trip': ui.open[v] = !ui.open[v]; render(); break;
       case 'rcpt': openSheet({ type: 'rcpt', id: v, step: 'pick' }); break;
+      case 'rcyes': if (ui.sheet && ui.sheet.done) openSheet({ type: 'rcpt', id: 'cart', cart: ui.sheet.done, back: ui.sheet, step: 'pick' }); break;
+      case 'rcno': finishPlain(); break;
+      case 'rcback': if (ui.sheet && ui.sheet.type === 'complete') { ui.sheet.step = ''; ui.sheet.fresh = true; renderSheet(); } else if (ui.sheet && ui.sheet.back) { var bk = ui.sheet.back; ocr.job++; bk.step = 'ask'; bk.fresh = true; openSheet(bk); } break;
       case 'rcstop': if (ui.sheet) { ocr.job++; ui.sheet.step = ui.sheet.text ? 'review' : 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
       case 'rcmanual': if (ui.sheet) { ui.sheet.manual = true; ui.sheet.text = ''; rcReview(ui.sheet); } break;
       case 'rcreparse': if (ui.sheet) { var ta = $('rcText'); ui.sheet.text = ta ? ta.value : ui.sheet.text; ui.sheet.manual = true; rcReview(ui.sheet); } break;
@@ -2153,11 +2200,8 @@ header.strip { overflow: hidden; }
       if (!store) throw new Error('Type the store name.');
       var useNew = s.store === '__other' || s.branch === '__new' || !G.branches(r, store).length;
       var branch = useNew ? (s.newbranch || '').trim() : s.branch;
-      var total = G.totals(r).cart, count = G.items(r, 'cart').length;
-      var tid = G.uid();
-      act(G.completeTrip(r, { id: tid, store: store, branch: branch, date: s.date }), 'Trip saved: ' + count + ' item' + (count === 1 ? '' : 's') + ', ' + G.money(total));
-      closeSheet();
-      if (R()['t:' + tid]) openSheet({ type: 'rcpt', id: tid, step: 'pick', after: true });
+      if (!G.items(r, 'cart').length) throw new Error('The cart is empty.');
+      s.done = { store: store, branch: branch, date: s.date || G.todayISO() }; s.step = 'ask'; s.fresh = true; renderSheet();
       return;
     }
     if (f.id === 'rcForm') { rcApprove(); return; }
@@ -2229,6 +2273,17 @@ header.strip { overflow: hidden; }
       img.src = url;
     });
   }
+  /* Finish the shop the plain way: no receipt. */
+  function finishPlain() {
+    var s = ui.sheet, d = s && (s.done || (s.cart)); if (!d) return; ocr.job++;
+    var r = R(), total = G.totals(r).cart, count = G.items(r, 'cart').length;
+    if (!count) { closeSheet(); toast('The cart is empty.'); return; }
+    act(G.completeTrip(r, { id: G.uid(), store: d.store, branch: d.branch, date: d.date }), 'Trip saved: ' + count + ' item' + (count === 1 ? '' : 's') + ', ' + G.money(total));
+    closeSheet();
+  }
+  /* The trip a receipt sheet works on: a saved trip from History, or the cart before the shop is finished. */
+  function rcTrip(s) { return s.cart ? (G.items(R(), 'cart').length ? GGR.cartTrip(R(), s.cart) : null) : R()['t:' + s.id]; }
+  function cartSig() { return G.items(R(), 'cart').map(function (it) { return it.id + '/' + it.qty + '/' + it.price + '/' + it.name; }).join('|'); }
   function rcSheetOpen(id, s) { return ui.sheet && ui.sheet.type === 'rcpt' && ui.sheet.id === id && (!s || ui.sheet === s); }
   function readReceiptPhoto(file) {
     var s = ui.sheet; if (!s || s.type !== 'rcpt' || !file) return;
@@ -2259,8 +2314,9 @@ header.strip { overflow: hidden; }
   }
   function rcFail(s, msg) { s.step = s.text ? 'review' : 'pick'; s.err = msg; s.fresh = true; if (s.step === 'review') rcReview(s, true); else renderSheet(); }
   function rcReview(s, keepErr) {
-    var t = R()['t:' + s.id]; if (!t) { closeSheet(); toast('That trip has gone.'); return; }
+    var t = rcTrip(s); if (!t) { closeSheet(); toast(s.cart ? 'The cart is empty now.' : 'That trip has gone.'); return; }
     if (!keepErr) s.err = '';
+    if (s.cart) s.sig = cartSig();
     s.parsed = GGR.parseReceipt(s.text || '');
     var rv = GGR.buildReview(R(), t, s.parsed);
     s.rows = rv.rows; s.adds = {}; rv.adds.forEach(function (a) { s.adds[a.j] = a; });
@@ -2271,15 +2327,31 @@ header.strip { overflow: hidden; }
   function rcLine(s, j) { return j >= 0 && s.parsed ? s.parsed.items[j] : null; }
   function rcEach(total, qty) { return total != null && qty > 0 ? G.money(GGR.eachFrom(total, qty)) + (Math.abs(qty - 1) > 0.0005 ? ' each' : '') : ''; }
   function rcCount(s) {
-    var t = R()['t:' + s.id], n = 0; if (!t || !s.rows) return 0;
+    var t = rcTrip(s), n = 0; if (!t || !s.rows) return 0;
     s.rows.forEach(function (row) { var it = t.items[row.n]; if (row.on && it && (row.total == null || row.qty == null || isNaN(row.total) || isNaN(row.qty) || GGR.changed(it, row.qty, row.total))) n++; });
     Object.keys(s.adds || {}).forEach(function (j) { if (s.adds[j].on && !rcUsed(s, +j)) n++; });
     return n;
   }
-  function rcUsed(s, j) { return (s.rows || []).some(function (r) { return r.j === j; }); }
+  /* A receipt line belongs to a row when that row is ticked or is a sure match (one with nothing to change starts unticked).
+     Only an unticked unsure row lets go of its line, so the line also shows under Not on your list. */
+  function rcHolds(r) { return r.on || r.conf !== 'check'; }
+  function rcUsed(s, j) { return (s.rows || []).some(function (r) { return r.j === j && rcHolds(r); }); }
+  /* What the trip will total once Approve is tapped, from what is ticked now. */
+  function rcAfter(s) {
+    var t = rcTrip(s), c = 0; if (!t) return 0;
+    (s.rows || []).forEach(function (row) { var it = t.items[row.n]; if (!it) return; c += row.on && row.total != null && !isNaN(row.total) ? Math.round(row.total * 100) : G.lineCents(it); });
+    t.items.forEach(function (it, n) { if (!(s.rows || []).some(function (row) { return row.n === n; })) c += G.lineCents(it); });
+    Object.keys(s.adds || {}).forEach(function (j) { var a = s.adds[j]; if (a.on && !rcUsed(s, +j) && a.total != null && !isNaN(a.total)) c += Math.round(a.total * 100); });
+    return c / 100;
+  }
+  function rcAfterText(s) {
+    var p = s.parsed || {}, v = rcAfter(s), rt = p.total;
+    return 'Trip total after Approve: <b>' + G.money(v) + '</b>' + (rt != null ? (Math.abs(v - rt) < 0.005 ? ' · matches the receipt ✓' : ' · receipt says ' + G.money(rt) + ' (' + G.money(Math.abs(v - rt)) + ' ' + (v < rt ? 'short' : 'over') + ')') : '');
+  }
   var CONF = { learned: ['ok', 'Learned'], good: ['ok', 'Good match'], check: ['chk', 'Check this'], none: ['no', 'Not found'] };
   function rcptSheet(s) {
-    var t = R()['t:' + s.id]; if (!t) return '<p class="muted">That trip has gone.</p>';
+    var t = rcTrip(s); if (!t) return '<p class="muted">' + (s.cart ? 'The cart is empty now, so there is nothing to check.' : 'That trip has gone.') + '</p>';
+    var C = !!s.cart;
     var where = esc(t.store) + (t.branch ? ' ' + esc(t.branch) : '') + ', ' + fmtDate(t.date);
     var err = s.err ? '<p class="rc-err" role="alert">' + esc(s.err) + '</p>' : '<p class="rc-err" role="alert" hidden></p>';
     if (s.step === 'reading') return '<div class="panel"><p><b>' + where + '</b></p><p id="rcStatus">' + esc(s.status || 'Reading…') + (s.pct ? ' ' + s.pct + '%' : '') + '</p><div class="rc-prog"><i id="rcBar" style="width:' + Math.max(4, s.pct || 0) + '%"></i></div><p class="tiny muted">Keep the app open. The photo stays on your phone: it is read here, not uploaded.</p></div>' +
@@ -2287,17 +2359,18 @@ header.strip { overflow: hidden; }
     var pick = '<input type="file" id="rcCam" accept="image/*" capture="environment" class="rc-file"><input type="file" id="rcLib" accept="image/*" class="rc-file">';
     if (s.step !== 'review') {
       return '<div class="panel"><p><b>' + where + '</b> · ' + t.items.length + ' item' + (t.items.length === 1 ? '' : 's') + ' · ' + G.money(t.total) + '</p>' +
-        '<p>Take a photo of the receipt and the app reads the prices you actually paid. You see every change first, and <b>nothing is saved until you tap Approve</b>. Only this trip changes.</p>' + err + pick +
+        (C ? '<p>Take a photo of the receipt and the app checks your cart against what you paid, and finds anything you bought that wasn\'t on your list. You see every change first, and <b>nothing is saved until you tap Approve</b>, which also finishes the shop.</p>'
+          : '<p>Take a photo of the receipt and the app reads the prices you actually paid. You see every change first, and <b>nothing is saved until you tap Approve</b>. Only this trip changes.</p>') + err + pick +
         '<div class="btns rc-pick"><label for="rcCam" class="btn wide pri">📷 Take a photo of the receipt</label><label for="rcLib" class="btn wide">Choose a photo</label><button type="button" class="btn wide" data-a="rcmanual">Type the prices in myself</button></div>' +
         '<p class="tiny muted">Tips: lay the receipt flat in good light, fill the screen with it, and keep it straight. A long receipt can go in two photos: do the top first, then Add another photo.</p></div>' +
-        (s.after ? '<div class="btns"><button type="button" class="btn small" data-a="close">Not now</button></div>' : '');
+        (C ? '<div class="btns"><button type="button" class="btn small" data-a="rcback">Back</button><button type="button" class="btn small" data-a="rcno">No receipt, finish the shop</button></div>' : '');
     }
     var p = s.parsed || { items: [], skipped: [], total: null, sum: 0 }, lines = p.items;
     var h = '<div class="panel rc-head"><p><b>' + where + '</b></p>';
     if (lines.length) h += '<p>Found ' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ' adding up to <b>' + G.money(p.sum) + '</b>' + (p.total != null ? '. Receipt total: <b>' + G.money(p.total) + '</b>' + (p.totalGuess ? ' (hard to read, so check it)' : '') : '') + '.</p>';
     if (p.total != null && Math.abs(p.total - p.sum) > 0.05) h += '<p class="rc-warn">The lines found don\'t add up to the receipt total (' + G.money(Math.abs(p.total - p.sum)) + ' ' + (p.sum < p.total ? 'short' : 'over') + '). A line may be missing or misread, so check the amounts, or add another photo.</p>';
     h += '<p class="tiny">Ticked rows are the changes. Sure matches start ticked; <b>Check this</b> rows start unticked until you look at them. Nothing is saved until you tap <b>Approve</b>.</p>' + err + '</div>';
-    h += '<form id="rcForm" novalidate><h3 class="rc-h">Items on this trip</h3>';
+    h += '<form id="rcForm" novalidate><h3 class="rc-h">' + (C ? 'Items in your cart' : 'Items on this trip') + '</h3>';
     var opts = function (sel) { return '<option value="-1">No receipt line</option>' + lines.map(function (ln, j) { return '<option value="' + j + '"' + (j === sel ? ' selected' : '') + '>' + esc(ln.name) + ' · ' + G.money(ln.total) + '</option>'; }).join(''); };
     s.rows.forEach(function (row, k) {
       var it = t.items[row.n]; if (!it) return;
@@ -2312,11 +2385,13 @@ header.strip { overflow: hidden; }
     });
     var extra = lines.filter(function (ln) { return !rcUsed(s, ln.i); });
     if (extra.length) {
-      h += '<h3 class="rc-h">On the receipt but not on this trip</h3><p class="tiny muted">Tick one to add it to this trip. Pick a receipt line in a row above instead if it is one of your items.</p>';
+      h += '<h3 class="rc-h">Not on your list</h3><p class="tiny muted">On the receipt but not ' + (C ? 'in your cart' : 'on this trip') + ': swaps and extras. Ticked ones are added to the trip and its total, in bold so they stand out. Untick any you don\'t want, or pick the line in a row above if it is one of your items.</p>';
       var cats = G.catOrder(R());
       extra.forEach(function (ln) {
-        var a = s.adds[ln.i] || (s.adds[ln.i] = { j: ln.i, on: false, name: GGR.niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(GGR.niceName(ln.name), R()) }), j = ln.i;
-        h += '<div class="rc-row add' + (a.on ? ' on' : '') + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="aon" data-j="' + j + '"' + (a.on ? ' checked' : '') + '><span><b>Add to this trip</b></span></label></div><div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
+        var a = s.adds[ln.i] || (s.adds[ln.i] = { j: ln.i, on: false, extra: true, maybe: '', name: GGR.niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(GGR.niceName(ln.name), R()) }), j = ln.i;
+        var mb = (s.rows || []).filter(function (r) { return r.j === j && !rcHolds(r); }).map(function (r) { return t.items[r.n] && t.items[r.n].name; })[0] || '';
+        h += '<div class="rc-row add rc-extra' + (a.on ? ' on' : '') + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="aon" data-j="' + j + '"' + (a.on ? ' checked' : '') + '><span><b class="rc-xname" id="rcAX' + j + '">' + esc(a.name || 'Unnamed line') + '</b><small>Add to this trip · ' + (a.total == null || isNaN(a.total) ? 'no amount' : G.money(a.total)) + '</small></span></label><span class="rc-conf extra">Not on list</span></div>' +
+          (mb ? '<p class="tiny rc-note">Might be <b>' + esc(mb) + '</b> from your list. If it is, tick that row above instead.</p>' : '') + '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
           '<div class="f"><label for="rcAN' + j + '">Name</label><input id="rcAN' + j + '" data-rc="aname" data-j="' + j + '" value="' + esc(a.name) + '"></div>' +
           '<div class="row rc-nums"><div class="f"><label for="rcAC' + j + '">Category</label><select id="rcAC' + j + '" data-rc="acat" data-j="' + j + '">' + cats.map(function (c) { return '<option' + (c === a.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div></div>' +
           '<div class="row rc-nums"><div class="f"><label for="rcAQ' + j + '">Qty</label><input id="rcAQ' + j + '" data-rc="aqty" data-j="' + j + '" inputmode="decimal" value="' + esc(a.qty == null || isNaN(a.qty) ? (a.qtyText || '') : G.qtyText(a.qty)) + '"></div><div class="f"><label for="rcAT' + j + '">Paid (line)</label><input id="rcAT' + j + '" data-rc="atotal" data-j="' + j + '" inputmode="decimal" value="' + esc(a.total == null || isNaN(a.total) ? (a.totalText || '') : a.total.toFixed(2)) + '"></div></div></div>';
@@ -2325,24 +2400,34 @@ header.strip { overflow: hidden; }
     if (p.skipped.length) h += '<details class="rc-skip"><summary>Lines left out (' + p.skipped.length + ')</summary><p class="tiny muted">Totals, GST, payment and savings summaries are never counted as items.</p>' + p.skipped.map(function (x) { return '<div class="rc-raw">' + esc(x.text) + ' <small>(' + esc(x.why) + ')</small></div>'; }).join('') + '</details>';
     h += '<details class="rc-text"' + (lines.length ? '' : ' open') + '><summary>The text it read</summary><p class="tiny muted">Fix a misread price or name here, then tap Read again.</p><textarea id="rcText" class="inp" rows="8" spellcheck="false">' + esc(s.text || '') + '</textarea><div class="btns"><button type="button" class="btn small" data-a="rcreparse">Read again</button></div></details>';
     var n = rcCount(s);
-    h += '<div class="btns rc-go"><button type="submit" class="btn wide pri" id="rcApprove"' + (n ? '' : ' disabled') + '>' + (n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing ticked to change') + '</button></div><p class="tiny muted" style="text-align:center">Changes this trip only: your list and your other trips stay as they are.</p></form>';
+    h += '<p class="rc-after" id="rcAfter">' + rcAfterText(s) + '</p>';
+    h += '<div class="btns rc-go"><button type="submit" class="btn wide pri" id="rcApprove"' + (n || C ? '' : ' disabled') + '>' + rcBtn(s, n) + '</button></div><p class="tiny muted" style="text-align:center">' + (C ? 'Approve saves the trip with these prices and empties the cart. Anything still on your list stays there.' : 'Changes this trip only: your list and your other trips stay as they are.') + '</p>' +
+      (C ? '<div class="btns"><button type="button" class="btn small" data-a="rcback">Back</button></div>' : '') + '</form>';
     h += pick + '<div class="btns"><label for="rcCam" class="btn small">📷 Add another photo</label><button type="button" class="btn small" data-a="rcnew">Start again</button></div>';
     return h;
   }
   function rcRefresh(s) {
     var b = layer.querySelector('#rcApprove'); if (!b) return; var n = rcCount(s);
-    b.disabled = !n; b.textContent = n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing ticked to change';
+    b.disabled = !n && !s.cart; b.textContent = rcBtn(s, n);
+    var a = layer.querySelector('#rcAfter'); if (a) a.innerHTML = rcAfterText(s);
+  }
+  function rcBtn(s, n) {
+    if (s.cart) return n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') + ' and finish' : 'No changes: finish the shop';
+    return n ? 'Approve ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing ticked to change';
   }
   function rcInput(t) {
     var s = ui.sheet; if (!s || s.type !== 'rcpt' || s.step !== 'review') return false;
     var f = t.getAttribute('data-rc'); if (!f) return false;
     var row = t.hasAttribute('data-k') ? s.rows[+t.getAttribute('data-k')] : null, a = t.hasAttribute('data-j') ? s.adds[+t.getAttribute('data-j')] : null;
     var tick = function (el) { var box = el.closest('.rc-row'); var cb = box && box.querySelector('input[type=checkbox]'); if (cb && !cb.checked) { cb.checked = true; box.classList.add('on'); } };
-    if (row && f === 'on') { row.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); }
+    if (row && f === 'on') {
+      row.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked);
+      if (row.j >= 0 && row.conf === 'check') { if (row.on && s.adds[row.j]) s.adds[row.j].on = false; renderSheet(); return true; } // the line moves between this row and Not on your list
+    }
     else if (row && f === 'qty') { row.qtyText = t.value; var q = G.parseQty(t.value); row.qty = q; row.on = true; tick(t); }
     else if (row && f === 'total') { row.totalText = t.value; var m = G.parseMoney(t.value); row.total = m == null ? NaN : m; row.on = true; tick(t); }
-    else if (a && f === 'aon') { a.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); }
-    else if (a && f === 'aname') { a.name = t.value; }
+    else if (a && f === 'aon') { a.on = t.checked; t.closest('.rc-row').classList.toggle('on', t.checked); if (a.on) s.rows.forEach(function (o) { if (o.j === a.j && !rcHolds(o)) { o.j = -1; o.conf = 'none'; o.note = ''; } }); }
+    else if (a && f === 'aname') { a.name = t.value; var xn = layer.querySelector('#rcAX' + a.j); if (xn) xn.textContent = t.value || 'Unnamed line'; }
     else if (a && f === 'acat') { a.cat = t.value; }
     else if (a && f === 'aqty') { a.qtyText = t.value; a.qty = G.parseQty(t.value); a.on = true; tick(t); }
     else if (a && f === 'atotal') { a.totalText = t.value; var am = G.parseMoney(t.value); a.total = am == null ? NaN : am; a.on = true; tick(t); }
@@ -2350,7 +2435,7 @@ header.strip { overflow: hidden; }
     rcRefresh(s); return true;
   }
   function rcPickLine(t) {
-    var s = ui.sheet, k = +t.getAttribute('data-k'), row = s.rows[k], j = +t.value, tr = R()['t:' + s.id]; if (!row || !tr) return;
+    var s = ui.sheet, k = +t.getAttribute('data-k'), row = s.rows[k], j = +t.value, tr = rcTrip(s); if (!row || !tr) return;
     if (j >= 0) s.rows.forEach(function (o, m) { if (m !== k && o.j === j) { o.j = -1; o.on = false; o.conf = 'none'; o.note = ''; } });
     row.j = j;
     var it = tr.items[row.n], ln = rcLine(s, j);
@@ -2361,7 +2446,8 @@ header.strip { overflow: hidden; }
   }
   CONF.picked = ['ok', 'Your pick'];
   function rcApprove() {
-    var s = ui.sheet, r = R(), t = r['t:' + s.id]; if (!t) throw new Error('That trip has gone.');
+    var s = ui.sheet, r = R(), t = rcTrip(s); if (!t) throw new Error(s.cart ? 'The cart is empty now.' : 'That trip has gone.');
+    if (s.cart && cartSig() !== s.sig) { s.err = 'Your cart changed while you were checking, so the receipt has been matched again. Check it and tap Approve again.'; rcReview(s, true); return; }
     var rows = [], adds = [];
     s.rows.forEach(function (row) {
       if (!row.on) return; var it = t.items[row.n]; if (!it) return;
@@ -2376,6 +2462,15 @@ header.strip { overflow: hidden; }
       if (!(a.qty > 0)) throw new Error('Check the qty for ' + a.name + '.');
       var ln = rcLine(s, +j); adds.push({ name: a.name, qty: a.qty, total: a.total, cat: a.cat, rec: ln && !ln.noName ? ln.name : '' });
     });
+    if (s.cart) {
+      if (cartSig() !== s.sig) { s.err = 'Your cart changed while you were checking, so the receipt has been matched again. Check it and tap Approve again.'; rcReview(s, true); return; }
+      ocr.job++;
+      var fin = GGR.finishWithReceipt(r, { id: G.uid(), store: s.cart.store, branch: s.cart.branch, date: s.cart.date }, { rows: rows, adds: adds, store: s.cart.store, receiptTotal: s.parsed ? s.parsed.total : null });
+      var cnt = t.items.length + fin.added;
+      ui.open[fin.id] = true; closeSheet();
+      act(fin.ch, 'Trip saved: ' + cnt + ' item' + (cnt === 1 ? '' : 's') + ', ' + G.money(fin.total) + (fin.changed || fin.added ? ' (' + (fin.changed ? fin.changed + ' price' + (fin.changed === 1 ? '' : 's') + ' from the receipt' : '') + (fin.changed && fin.added ? ', ' : '') + (fin.added ? fin.added + ' not on your list' : '') + ')' : ''), true);
+      return;
+    }
     var res = GGR.applyReceipt(r, s.id, { rows: rows, adds: adds, store: t.store, receiptTotal: s.parsed ? s.parsed.total : null });
     if (!res.changed && !res.added) { if (Object.keys(res.ch).length) eng.change(res.ch); closeSheet(); toast('No prices needed changing'); return; }
     var was = t.total; ui.open[s.id] = true;
