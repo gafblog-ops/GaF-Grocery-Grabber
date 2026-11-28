@@ -132,6 +132,13 @@ nav.tabs button.on svg { filter: drop-shadow(0 0 0 #000); }
 .add .r2 { display: grid; grid-template-columns: 74px 1fr 1.5fr; gap: 8px; }
 .add .nameline { display: flex; gap: 8px; align-items: flex-end; }
 .add .nameline .f { flex: 1; }
+.deal { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; border: 2px dashed var(--ink); border-radius: 10px; background: #FFFBEA; }
+.deal .deal-l { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #333; }
+.deal .deal-for { font-weight: 800; }
+.deal input.deal-n { width: 52px; text-align: center; }
+.deal .deal-p { width: 92px; }
+.deal .deal-x { font-weight: 800; font-size: 13px; margin-left: auto; white-space: nowrap; }
+.line .edit .deal { grid-column: 1 / -1; }
 .iconbtn { width: 48px; height: 44px; flex: none; border: 2.5px solid var(--ink); border-radius: 10px; background: var(--cyan); display: flex; align-items: center; justify-content: center; box-shadow: 2px 2px 0 var(--ink); padding: 0; }
 .iconbtn svg { width: 26px; height: 26px; }
 .hint { font-size: 13px; color: #444; min-height: 18px; }
@@ -354,6 +361,25 @@ header.strip { overflow: hidden; }
 .rc-extra .rc-xname { font-weight: 900; font-size: 16px; }
 .rc-extra input[data-rc=aname] { font-weight: 800; }
 .rc-conf.extra { background: #FFD6F0; }
+.rc-diff { position: sticky; top: -1px; z-index: 3; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; margin: 0 0 10px; padding: 10px 12px; background: #FFE3E8; border: 2.5px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); }
+.rc-diff.zero { background: var(--lime); }
+.rc-diff .rc-dlab { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; grid-row: 1; }
+.rc-diff .rc-dnum { font-size: 28px; line-height: 1; grid-row: 1 / span 2; grid-column: 2; text-align: right; font-variant-numeric: tabular-nums; }
+.rc-diff .rc-dsub { font-size: 12px; font-weight: 700; grid-row: 2; grid-column: 1; }
+.rc-fix-head { display: grid; grid-template-columns: 1fr 1fr 86px; gap: 8px; padding: 0 10px 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #444; }
+.rc-fx { border: 2.5px solid var(--ink); border-radius: 12px; background: #fff; margin: 0 0 8px; overflow: hidden; }
+.rc-fx.bad { background: #FFF3C4; box-shadow: 3px 3px 0 var(--over); border-color: var(--over); }
+.rc-fxbtn { display: grid; grid-template-columns: 1fr 1fr 86px; gap: 8px; width: 100%; padding: 9px 10px; background: none; border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; align-items: center; }
+.rc-fxc { min-width: 0; display: flex; flex-direction: column; }
+.rc-fxc b { font-size: 14px; overflow-wrap: anywhere; }
+.rc-fxc small { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rc-fxst { font-size: 11px; font-weight: 800; text-transform: uppercase; text-align: right; }
+.rc-fx.bad .rc-fxst { color: var(--over); }
+.rc-fxpanel { padding: 0 10px 10px; display: grid; gap: 8px; border-top: 2px dashed var(--ink); padding-top: 8px; }
+.rc-fxpanel .btns { margin: 0; }
+.rc-dropped { color: var(--over); }
+.rc-fixgo[hidden] { display: none !important; }
+.linkbtn { background: none; border: 0; padding: 0; font: inherit; font-weight: 800; text-decoration: underline; color: inherit; cursor: pointer; }
 .prow.rc-extra .nm > b { font-weight: 900; }
 .rc-after { margin: 8px 2px; font-size: 14px; }
 .rc-ask .big { font-size: 18px; font-weight: 800; margin: 6px 0; }
@@ -409,7 +435,28 @@ header.strip { overflow: hidden; }
     var d = Math.floor(c / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return (neg ? '-' : '') + '$' + d + '.' + ('0' + (c % 100)).slice(-2);
   }
-  function lineCents(it) { return it && it.price != null ? Math.round((+it.price) * 100 * (it.qty == null ? 1 : +it.qty)) : 0; }
+  /* A line's total. With a multi-buy deal ({n, price}: n for $price, any count and any price), every full group of n
+     costs the deal price and anything left over costs the normal price each. */
+  function lineCents(it) {
+    if (!it || it.price == null) return 0;
+    var q = it.qty == null ? 1 : +it.qty, d = it.deal;
+    if (d && d.n >= 2 && d.price != null) {
+      var g = Math.floor((q + 1e-9) / d.n), rest = Math.round((q - g * d.n) * 1000) / 1000;
+      return Math.round(g * d.price * 100 + rest * (+it.price) * 100);
+    }
+    return Math.round((+it.price) * 100 * q);
+  }
+  /* The multi-buy boxes: both empty is no deal; otherwise a whole count of 2 or more and a price. */
+  function parseDeal(n, price) {
+    var ns = n == null ? '' : String(n).trim(), ps = price == null ? '' : String(price).trim();
+    if (!ns && !ps) return null;
+    if (!ns || !ps) throw new Error('A multi-buy needs both boxes, like 3 for 8.00.');
+    var c = +ns; if (!/^\d+$/.test(ns) || c < 2) throw new Error('The multi-buy count needs to be a whole number, 2 or more.');
+    var p = typeof price === 'number' ? price : parseMoney(ps);
+    if (p == null || isNaN(p) || !(p > 0)) throw new Error('The multi-buy price needs to be a price, like 5.00.');
+    return { n: c, price: p };
+  }
+  function dealText(it) { return it && it.deal ? it.deal.n + ' for ' + money(it.deal.price) : ''; }
   function qtyText(q) { q = q == null ? 1 : +q; return String(Math.round(q * 1000) / 1000); }
 
   // ---------- category guessing ----------
@@ -522,6 +569,8 @@ header.strip { overflow: hidden; }
     var cat = CATEGORIES.indexOf(f.cat) >= 0 ? f.cat : guessCategory(name, recs);
     var k = nameKey(name), id = f.id || uid();
     var it = { id: id, name: name, qty: qty, price: price, cat: cat, state: 'list', order: nextOrder(recs, 'list', cat), added: now || Date.now() };
+    var deal = f.deal !== undefined ? f.deal : parseDeal(f.dealN, f.dealPrice);
+    if (deal) { it.deal = { n: deal.n, price: deal.price }; if (price == null) it.price = Math.round(deal.price / deal.n * 10000) / 10000; }
     var bc = tidy(f.barcode) || (recs['b:' + k] || '');
     if (bc) it.barcode = bc;
     var ch = {}; ch['i:' + id] = it; ch['c:' + k] = cat;
@@ -534,6 +583,7 @@ header.strip { overflow: hidden; }
     if (f.name != null) { n.name = tidy(f.name); if (!n.name) throw new Error('The item needs a name.'); }
     if (f.qty != null) { var q = typeof f.qty === 'number' ? f.qty : parseQty(f.qty); if (!(q > 0)) throw new Error('Quantity needs to be a number above 0.'); n.qty = q; }
     if (f.price !== undefined) { var p = f.price === null || f.price === '' ? null : (typeof f.price === 'number' ? f.price : parseMoney(f.price)); if (p != null && !(p >= 0)) throw new Error('Price needs to be a number, like 4.50.'); n.price = p; }
+    if (f.dealN !== undefined || f.dealPrice !== undefined) { var dl = parseDeal(f.dealN, f.dealPrice); if (dl) { n.deal = dl; if (n.price == null) n.price = Math.round(dl.price / dl.n * 10000) / 10000; } else delete n.deal; }
     if (f.barcode !== undefined) { var b = tidy(f.barcode); if (b) n.barcode = b; else delete n.barcode; }
     if (f.cat && CATEGORIES.indexOf(f.cat) >= 0 && f.cat !== catOf(it)) { n.cat = f.cat; if (n.state === 'list') n.order = nextOrder(recs, 'list', f.cat); }
     ch['i:' + id] = n;
@@ -623,6 +673,7 @@ header.strip { overflow: hidden; }
   function cartLines(recs) {
     return items(recs, 'cart').map(function (it) {
       var o = { name: it.name, qty: it.qty == null ? 1 : it.qty, price: it.price, cat: catOf(it), line: lineCents(it) / 100 };
+      if (it.deal) o.deal = { n: it.deal.n, price: it.deal.price };
       if (it.barcode) o.barcode = it.barcode;
       return o;
     });
@@ -746,7 +797,7 @@ header.strip { overflow: hidden; }
 
   var api = {
     CATEGORIES: CATEGORIES, DEFAULT_STORES: DEFAULT_STORES, nameKey: nameKey, storeKey: storeKey, uid: uid,
-    parseMoney: parseMoney, parseQty: parseQty, money: money, cents: cents, lineCents: lineCents, qtyText: qtyText,
+    parseMoney: parseMoney, parseQty: parseQty, money: money, cents: cents, lineCents: lineCents, parseDeal: parseDeal, dealText: dealText, qtyText: qtyText,
     guessCategory: guessCategory, items: items, catOf: catOf, catOrder: catOrder, setCatOrder: setCatOrder, moveCat: moveCat, listGroups: listGroups, totals: totals, limit: limit, budgetLevel: budgetLevel,
     addItem: addItem, editItem: editItem, moveItem: moveItem, placeInList: placeInList, emptyTrash: emptyTrash, emptyCart: emptyCart, deleteItem: deleteItem, setLimit: setLimit,
     stores: stores, branches: branches, rememberStore: rememberStore, canonicalStore: canonicalStore,
@@ -1116,9 +1167,14 @@ header.strip { overflow: hidden; }
     function qty(v, nm) { var q = typeof v === 'number' ? v : G.parseQty(v); if (!(q > 0)) throw new Error('Check the qty for ' + nm + ': it needs to be above 0.'); return q; }
     (d.rows || []).forEach(function (row) {
       var it = items[row.n]; if (!it) throw new Error('An item on that trip has gone. Close this and scan again.');
+      if (row.drop) { // not on the receipt and the person says it wasn't bought: it comes off this trip (Undo puts it back)
+        if (it.was === undefined) { it.was = { qty: it.qty == null ? 1 : it.qty, price: it.price == null ? null : it.price }; if (it.deal) it.was.deal = it.deal; }
+        it.dropped = true; changedN++; return;
+      }
       var q = qty(row.qty, it.name), tot = money(row.total, it.name);
       if (!changed(it, q, tot)) { if (row.rec && d.store) ch[aliasKey(d.store, row.rec)] = G.nameKey(it.name); return; }
-      if (it.was === undefined) it.was = { qty: it.qty == null ? 1 : it.qty, price: it.price == null ? null : it.price };
+      if (it.was === undefined) { it.was = { qty: it.qty == null ? 1 : it.qty, price: it.price == null ? null : it.price }; if (it.deal) it.was.deal = it.deal; }
+      delete it.deal; // the price paid is now the line total spread over the qty, so any multi-buy is already in it
       it.qty = q; it.price = eachFrom(tot, q); it.line = G.lineCents(it) / 100; it.receipt = true;
       changedN++;
       if (row.rec && d.store) ch[aliasKey(d.store, row.rec)] = G.nameKey(it.name);
@@ -1131,8 +1187,11 @@ header.strip { overflow: hidden; }
       if (a.rec && d.store) ch[aliasKey(d.store, a.rec)] = G.nameKey(nm);
     });
     if (!changedN && !addedN) return { ch: ch, changed: 0, added: 0, total: t.total };
+    var gone = items.filter(function (x) { return x.dropped; });
+    items = items.filter(function (x) { return !x.dropped; });
     var totalC = 0; items.forEach(function (x) { totalC += G.lineCents(x); });
     var nt = Object.assign({}, t, { items: items, total: totalC / 100 });
+    if (gone.length) nt.dropped = (t.dropped || []).concat(gone);
     nt.receipt = { at: now, total: d.receiptTotal == null ? null : d.receiptTotal, changed: changedN + ((t.receipt && t.receipt.changed) || 0), added: addedN + ((t.receipt && t.receipt.added) || 0) };
     if (t.wasTotal === undefined) nt.wasTotal = t.total;
     ch['t:' + tripId] = nt;
@@ -1153,6 +1212,12 @@ header.strip { overflow: hidden; }
     var done = G.completeTrip(recs, Object.assign({}, f, { id: id }), now);
     var r2 = G.apply(recs, done);
     var res = applyReceipt(r2, id, d, now);
+    // Cart items taken off the trip because they weren't on the receipt weren't bought: they go back on the list.
+    var cart = G.items(recs, 'cart');
+    (d.rows || []).forEach(function (row) {
+      var it = row.drop && cart[row.n]; if (!it) return;
+      done['i:' + it.id] = Object.assign({}, it, { state: 'list' });
+    });
     return { ch: Object.assign({}, done, res.ch), id: id, changed: res.changed, added: res.added, total: res.total, wasTotal: r2['t:' + id].total };
   }
 
@@ -1162,13 +1227,17 @@ header.strip { overflow: hidden; }
     if (!t.receipt) return {};
     var items = (t.items || []).filter(function (x) { return !x.fromReceipt; }).map(function (x) {
       var o = Object.assign({}, x);
-      if (o.was) { o.qty = o.was.qty; o.price = o.was.price; o.line = G.lineCents(o) / 100; }
-      delete o.was; delete o.receipt; return o;
-    });
+      if (o.was) { o.qty = o.was.qty; o.price = o.was.price; if (o.was.deal) o.deal = o.was.deal; else delete o.deal; o.line = G.lineCents(o) / 100; }
+      delete o.was; delete o.receipt; delete o.dropped; return o;
+    }).concat((t.dropped || []).map(function (x) {
+      var o = Object.assign({}, x);
+      if (o.was) { o.qty = o.was.qty; o.price = o.was.price; if (o.was.deal) o.deal = o.was.deal; else delete o.deal; o.line = G.lineCents(o) / 100; }
+      delete o.was; delete o.receipt; delete o.dropped; return o;
+    }));
     var nt = Object.assign({}, t, { items: items });
     var totalC = 0; items.forEach(function (x) { totalC += G.lineCents(x); });
     nt.total = t.wasTotal !== undefined ? t.wasTotal : totalC / 100;
-    delete nt.receipt; delete nt.wasTotal;
+    delete nt.receipt; delete nt.wasTotal; delete nt.dropped;
     var ch = {}; ch['t:' + tripId] = nt; return ch;
   }
 
@@ -1727,7 +1796,29 @@ header.strip { overflow: hidden; }
     document.body.appendChild(t); toastT = setTimeout(function () { t.remove(); }, undo ? 5000 : 3200);
   }
   function fmtDate(iso) { var d = new Date(iso + 'T12:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); }
-  function qp(it) { var q = it.qty == null ? 1 : +it.qty; return (q !== 1 ? G.qtyText(q) + ' × ' : '') + (it.price == null ? 'no price yet' : G.money(it.price)); }
+  function qp(it) { var q = it.qty == null ? 1 : +it.qty; return (q !== 1 ? G.qtyText(q) + ' × ' : '') + (it.price == null ? 'no price yet' : G.money(it.price)) + (it.deal ? ' · ' + G.dealText(it) : ''); }
+  /* The multi-buy strip: [n] for $[price], any count and any price. Empty boxes mean no deal. */
+  function dealStrip(pre, it) {
+    var d = it && it.deal;
+    return '<div class="deal" role="group" aria-label="Multi-buy"><span class="deal-l">Multi-buy</span>' +
+      '<input id="' + pre + 'DealN" name="dealN" class="inp deal-n" inputmode="numeric" placeholder="2" aria-label="Multi-buy count" value="' + (d ? d.n : '') + '">' +
+      '<span class="deal-for">for</span><div class="money-in deal-p"><input id="' + pre + 'DealP" name="dealPrice" class="inp" inputmode="decimal" placeholder="0.00" aria-label="Multi-buy price" value="' + (d ? (G.cents(d.price) / 100).toFixed(2) : '') + '"></div>' +
+      '<span class="deal-x" id="' + pre + 'DealX" aria-live="polite">' + (d && it.price != null ? G.qtyText(it.qty == null ? 1 : it.qty) + ' = ' + G.money(G.lineCents(it) / 100) : '') + '</span></div>';
+  }
+  /* Under the strip: what the qty comes to with the deal, e.g. "3 = $8.99". */
+  function dealPreview(f) {
+    if (!f || !f.elements.dealN) return;
+    var x = f.querySelector('.deal-x'); if (!x) return;
+    var out = '';
+    try {
+      var d = G.parseDeal(f.elements.dealN.value, f.elements.dealPrice.value);
+      if (d) {
+        var q = f.elements.qty.value.trim() ? G.parseQty(f.elements.qty.value) : 1, pv = f.elements.price.value.trim(), p = pv ? G.parseMoney(pv) : null;
+        if (q > 0 && (p == null || p >= 0)) out = G.qtyText(q) + ' = ' + G.money(G.lineCents({ qty: q, price: p == null ? d.price / d.n : p, deal: d }) / 100);
+      }
+    } catch (e) { out = ''; }
+    x.textContent = out;
+  }
 
   // ---------- version from the number of commits ----------
   (function version() {
@@ -1811,11 +1902,12 @@ header.strip { overflow: hidden; }
   function addHTML() {
     var names = G.knownNames(R());
     return '<form class="panel add" id="addForm" novalidate autocomplete="off"><div class="grid">' +
-      '<div class="nameline"><div class="f"><label for="nName">Item</label><input id="nName" name="name" list="nameList" placeholder="e.g. Greek yoghurt" enterkeyhint="done"></div><button type="button" class="iconbtn" data-a="scan" data-v="add" aria-label="Scan a barcode">' + IC.scan + '</button></div>' +
+      '<div class="nameline"><div class="f"><input id="nName" name="name" list="nameList" placeholder="Item" aria-label="Item" enterkeyhint="done"></div><button type="button" class="iconbtn" data-a="scan" data-v="add" aria-label="Scan a barcode">' + IC.scan + '</button></div>' +
       '<datalist id="nameList">' + names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
       '<div class="r2"><div class="f"><label for="nQty">Qty</label><input id="nQty" name="qty" inputmode="decimal" placeholder="1"></div>' +
       '<div class="f"><label for="nPrice">Price each</label><div class="money-in"><input id="nPrice" name="price" inputmode="decimal" placeholder="0.00"></div></div>' +
       '<div class="f"><label for="nCat">Category</label><select id="nCat" name="cat">' + catOptions('', 'Auto') + '</select></div></div>' +
+      dealStrip('n') +
       '<div class="hint" id="nHint"></div>' +
       '<div id="nBc"></div>' +
       '<button class="btn pri wide" type="submit">Add to list</button></div></form>';
@@ -1823,11 +1915,11 @@ header.strip { overflow: hidden; }
   function captureAdd() {
     var f = $('addForm'); if (!f) return null;
     var a = document.activeElement;
-    return { name: f.elements.name.value, qty: f.elements.qty.value, price: f.elements.price.value, cat: f.elements.cat.value, focus: a && a.form === f ? a.name : '' };
+    return { name: f.elements.name.value, qty: f.elements.qty.value, price: f.elements.price.value, cat: f.elements.cat.value, dealN: f.elements.dealN.value, dealPrice: f.elements.dealPrice.value, focus: a && a.form === f ? a.name : '' };
   }
   function restoreAdd(k) {
     var f = $('addForm'); if (!f) return;
-    if (k) { f.elements.name.value = k.name; f.elements.qty.value = k.qty; f.elements.price.value = k.price; f.elements.cat.value = k.cat; if (k.focus && f.elements[k.focus] && !ui.sheet) f.elements[k.focus].focus(); }
+    if (k) { f.elements.name.value = k.name; f.elements.qty.value = k.qty; f.elements.price.value = k.price; f.elements.cat.value = k.cat; f.elements.dealN.value = k.dealN || ''; f.elements.dealPrice.value = k.dealPrice || ''; dealPreview(f); if (k.focus && f.elements[k.focus] && !ui.sheet) f.elements[k.focus].focus(); }
     addHint();
   }
   function addHint() {
@@ -1951,7 +2043,7 @@ header.strip { overflow: hidden; }
     var h = '<div class="lines">' + items.map(function (it) {
       var o = ui.cartOpen === it.id;
       return '<div class="line"><button class="hd" data-a="copen" data-v="' + esc(it.id) + '" aria-expanded="' + o + '"><span class="nm">' + esc(it.name) + '<span class="s">' + esc(qp(it)) + '</span></span><span class="amt">' + (it.price == null ? '<small style="font:600 12px sans-serif;color:#B45309">no price</small>' : G.money(G.lineCents(it) / 100)) + '</span></button>' +
-        (o ? '<form class="edit" data-form="cedit" data-id="' + esc(it.id) + '" novalidate><div class="f"><label>Qty</label><input name="qty" inputmode="decimal" value="' + esc(G.qtyText(it.qty)) + '"></div><div class="f"><label>Price each</label><div class="money-in"><input name="price" inputmode="decimal" value="' + (it.price == null ? '' : (G.cents(it.price) / 100).toFixed(2)) + '"></div></div><button class="btn small" type="submit">Save</button></form><div class="acts"><button class="btn" data-a="mv" data-id="' + esc(it.id) + '" data-v="list">Back to list</button><button class="btn danger" data-a="mv" data-id="' + esc(it.id) + '" data-v="trash">Trash</button></div>' : '') + '</div>';
+        (o ? '<form class="edit" data-form="cedit" data-id="' + esc(it.id) + '" novalidate><div class="f"><label>Qty</label><input name="qty" inputmode="decimal" value="' + esc(G.qtyText(it.qty)) + '"></div><div class="f"><label>Price each</label><div class="money-in"><input name="price" inputmode="decimal" value="' + (it.price == null ? '' : (G.cents(it.price) / 100).toFixed(2)) + '"></div></div>' + dealStrip('c' + esc(it.id), it) + '<button class="btn small" type="submit">Save</button></form><div class="acts"><button class="btn" data-a="mv" data-id="' + esc(it.id) + '" data-v="list">Back to list</button><button class="btn danger" data-a="mv" data-id="' + esc(it.id) + '" data-v="trash">Trash</button></div>' : '') + '</div>';
     }).join('') + '</div>';
     h += '<div class="totline lv-' + lv + '"><span>' + items.length + ' item' + (items.length === 1 ? '' : 's') + (lim ? ' · limit ' + G.money(lim) : '') + '</span><span class="dollar">' + G.money(t.cart) + '</span></div>';
     if (t.cartUnpriced) h += '<div class="note">' + t.cartUnpriced + ' item' + (t.cartUnpriced === 1 ? ' has' : 's have') + ' no price yet. Tap ' + (t.cartUnpriced === 1 ? 'it' : 'them') + ' to add the price.</div>';
@@ -1995,6 +2087,7 @@ header.strip { overflow: hidden; }
   function editSheet(it) {
     return '<form id="editForm" class="grid" novalidate data-id="' + esc(it.id) + '"><div class="f"><label for="eName">Item</label><input id="eName" name="name" value="' + esc(it.name) + '"></div>' +
       '<div class="row"><div class="f"><label for="eQty">Qty</label><input id="eQty" name="qty" inputmode="decimal" value="' + esc(G.qtyText(it.qty)) + '"></div><div class="f"><label for="ePrice">Price each</label><div class="money-in"><input id="ePrice" name="price" inputmode="decimal" value="' + (it.price == null ? '' : (G.cents(it.price) / 100).toFixed(2)) + '"></div></div></div>' +
+      dealStrip('e', it) +
       '<div class="f"><label for="eCat">Category</label><select id="eCat" name="cat">' + catOptions(G.catOf(it)) + '</select></div>' +
       '<div class="f"><label for="eBc">Barcode</label><div class="row"><input id="eBc" name="barcode" class="inp" inputmode="numeric" value="' + esc(it.barcode || '') + '" placeholder="Scan or type it"><button type="button" class="iconbtn" data-a="scan" data-v="edit" aria-label="Scan the barcode">' + IC.scan + '</button></div></div>' +
       '<div class="err" id="eErr" role="alert" style="color:var(--over);font-weight:700"></div>' +
@@ -2011,14 +2104,14 @@ header.strip { overflow: hidden; }
   function backToSettings() { return '<div class="btns back-row"><button type="button" class="btn small" data-a="settings">‹ Back to Settings</button></div>'; }
   /* Help guide. Plain scrolling page with jump buttons, so a re-render (sync) keeps your place. */
   var HELP = [
-    ['quick', 'Quick start', '<ol><li>Type what you need in <b>Item</b> and tap <b>Add to list</b>. It drops into the right category.</li><li>In the store, tap the little cart button on each item as it goes in your trolley.</li><li>At the checkout, open the cart and tap <b>Shopping complete</b>.</li></ol>'],
-    ['add', 'Adding items', '<ul><li><b>Category sorts itself.</b> Leave Category on <b>Auto</b> and the app picks one (it shows its guess, like "Auto: Dairy"). Pick a different one and it remembers that for next time.</li><li><b>Suggestions while you type.</b> Start typing and names you have used before pop up. Tap one to fill it in. They only show while you are typing, not after you add.</li><li><b>Qty</b> is how many. Leave it empty for 1. Halves are fine, like 1.5.</li><li><b>Price each</b> is the price for one. The app multiplies it by the qty.</li><li><b>No price yet? Leave it blank.</b> The item shows "Add price". Fill it in at the store: tap the item on the list, or tap it in the cart.</li><li><b>Last price.</b> If you have bought it before, it shows what you last paid and where.</li><li><b>Put the size in the name</b>, like "Milk 2L" or "Greek yoghurt 1kg", so you buy the right one and prices compare fairly.</li><li><b>Change anything later.</b> Tap an item to edit its name, qty, price, category or barcode.</li></ul>'],
+    ['quick', 'Quick start', '<ol><li>Type what you need in the box that says <b>Item</b> and tap <b>Add to list</b>. It drops into the right category.</li><li>In the store, tap the little cart button on each item as it goes in your trolley.</li><li>At the checkout, open the cart and tap <b>Shopping complete</b>.</li></ol>'],
+    ['add', 'Adding items', '<ul><li><b>The Item box.</b> The word <b>Item</b> sits inside the top box until you start typing over it, and comes back once the item is added, ready for the next one.</li><li><b>Category sorts itself.</b> Leave Category on <b>Auto</b> and the app picks one (it shows its guess, like "Auto: Dairy"). Pick a different one and it remembers that for next time.</li><li><b>Suggestions while you type.</b> Start typing and names you have used before pop up. Tap one to fill it in. They only show while you are typing, not after you add.</li><li><b>Qty</b> is how many. Leave it empty for 1. Halves are fine, like 1.5.</li><li><b>Price each</b> is the price for one. The app multiplies it by the qty.</li><li><b>Multi-buy deals.</b> Under Qty is the <b>Multi-buy</b> strip: type how many and the deal price, like <b>2 for 5.00</b>, <b>2 for 7.00</b> or <b>3 for 8.00</b>. Any count of 2 or more and any price work. Put the normal price in <b>Price each</b>. Every full set costs the deal price and any extra costs the normal price, so 3 Gatorade at 2 for 5.00 with a normal price of 3.99 come to $8.99 on one line. The strip shows what your qty comes to as you type.</li><li><b>Only know the deal price?</b> Leave Price each blank and any extra is counted at the deal price for one (2 for 5.00 counts an extra one at $2.50). Leave both multi-buy boxes empty for no deal. Change or clear a deal later by tapping the item, or in the cart.</li><li><b>No price yet? Leave it blank.</b> The item shows "Add price". Fill it in at the store: tap the item on the list, or tap it in the cart.</li><li><b>Last price.</b> If you have bought it before, it shows what you last paid and where.</li><li><b>Put the size in the name</b>, like "Milk 2L" or "Greek yoghurt 1kg", so you buy the right one and prices compare fairly.</li><li><b>Change anything later.</b> Tap an item to edit its name, qty, price, category or barcode.</li></ul>'],
     ['scan', 'Scanning barcodes', '<ul><li>Tap the barcode button next to <b>Item</b> and point the camera at the barcode. You can also type the number under the barcode.</li><li><b>It learns your barcodes.</b> The first time, type the item name and add it. After that, scanning the same barcode fills in the name, category and last price for you.</li><li>It does <b>not</b> look anything up online, so it won\'t know prices or names of things you haven\'t saved.</li><li>To add a barcode to an item already on your list, tap the item and scan in the Barcode box.</li><li>The camera needs the live https site, and your OK to use the camera.</li></ul>'],
     ['move', 'List, cart and trash', '<ul><li><b>Into the cart:</b> tap the cart button on the right of an item.</li><li><b>Drag it:</b> on the iPhone, press and hold an item, then slide it onto the cart, the bin or another category. On the Mac, click and drag.</li><li><b>Change category:</b> drag an item into another category and it stays there next time.</li><li><b>Changed your mind?</b> Tap <b>Undo</b> on the message at the bottom, or open the cart and tap an item for <b>Back to list</b> or <b>Trash</b>.</li></ul>'],
     ['totals', 'Cart total and the List amount', '<ul><li><b>The cart total</b> (in the black box on the cart) is what is in your trolley now.</li><li><b>List</b>, under the limit bar, is roughly what is still on your list. Items with no price yet show as "+ unpriced".</li><li><b>Spending limit:</b> tap <b>Set a spending limit</b> to choose an amount for this shop. The bar shows how much is left.</li></ul><div class="lvkey"><span><span class="k green">Green</span>under 75% of the limit</span><span><span class="k amber">Yellow</span>from 75%</span><span><span class="k orange">Orange</span>from 90%</span><span><span class="k red">Red</span>over the limit</span></div>'],
     ['trash', 'Empty cart and the trash', '<ul><li><b>Empty cart</b> (in the cart) asks first, then moves everything to the trash, not gone.</li><li>Open the <b>bin</b> at the bottom of your list to see the trash. Tap an item for <b>Back to list</b> or <b>Back to cart</b>.</li><li>Nothing is gone for good until you tap <b>Empty trash</b>, or finish a shop with <b>Shopping complete</b>, which empties the trash.</li></ul>'],
     ['done', 'Shopping complete', '<ul><li>Open the cart and tap <b>Shopping complete</b>.</li><li>Choose the <b>store</b>, then the <b>branch</b>. A new store or branch is typed once (use <b>Other…</b> or <b>New branch…</b>) and remembered after that.</li><li>Check the date and tap <b>Complete</b>. It then asks if you have the receipt to scan. Tap <b>Scan the receipt</b> to check the prices before the shop is finished (see the next topic), or <b>No receipt, finish the shop</b>.</li><li>The cart goes into your history with its prices, and anything still on your list stays there for next time.</li></ul>'],
-    ['receipt', 'Scanning the receipt', '<ul><li>With your shopping in the cart, tap <b>Shopping complete</b>, pick the store and tap <b>Complete</b>. When it asks, tap <b>Scan the receipt</b>. The shop is not finished yet: the receipt is checked against your cart first, so the trip saves with the prices you paid.</li><li>Forgot the receipt? Tap <b>No receipt, finish the shop</b>. You can scan it later from <b>History</b>, by opening the trip and tapping <b>Scan the receipt</b>.</li><li>Take a photo with the receipt flat, in good light, filling the screen. The photo is read on your phone, not uploaded. The first scan downloads the reader, so it needs the internet and takes a little longer.</li><li><b>You approve every change.</b> Each item shows what it was, the receipt line it matched and the new amount. Sure matches start ticked. <b>Check this</b> rows start unticked: look, fix the qty or amount if needed, and tick them. Change the receipt line in the menu if it picked the wrong one.</li><li>Savings and club prices on the receipt come off the item above them. Weighed items use the kg on the receipt. Totals, GST and payment lines are never counted as items. If the lines found do not add up to the receipt total, it tells you.</li><li><b>Bought something that wasn\'t on your list?</b> A swap (Sprite because the L&amp;P was out) or an extra shows under <b>Not on your list</b>, in bold, ready to add. Clear lines start ticked; untick any you don\'t want. Once approved they count in the trip total like any other item and show in <b>bold</b> in History, so the spontaneous buys are easy to spot. Anything on your list that you didn\'t buy stays on your list.</li><li>A line that might be one of your items, but the app isn\'t sure, shows in both places, unticked: tick the one that is right.</li><li>Nothing changes until you tap <b>Approve</b>. From the cart, Approve also finishes the shop, and the trip total then matches the receipt. Only that trip changes: your list and your other trips stay as they are. The approved prices then show in History, Reports and the price history.</li><li>If it misreads something, open <b>The text it read</b>, fix it and tap <b>Read again</b>, or just type the amounts in the boxes. <b>Type the prices in myself</b> skips the photo. <b>Undo receipt prices</b> in the trip puts it back.</li><li>It learns: when you approve a receipt line as one of your items, it matches it straight away next time at that store.</li></ul>'],
+    ['receipt', 'Scanning the receipt', '<ul><li>With your shopping in the cart, tap <b>Shopping complete</b>, pick the store and tap <b>Complete</b>. When it asks, tap <b>Scan the receipt</b>. The shop is not finished yet: the receipt is checked against your cart first, so the trip saves with the prices you paid.</li><li>Forgot the receipt? Tap <b>No receipt, finish the shop</b>. You can scan it later from <b>History</b>, by opening the trip and tapping <b>Scan the receipt</b>.</li><li>Take a photo with the receipt flat, in good light, filling the screen. The photo is read on your phone, not uploaded. The first scan downloads the reader, so it needs the internet and takes a little longer.</li><li><b>You approve every change.</b> Each item shows what it was, the receipt line it matched and the new amount. Sure matches start ticked. <b>Check this</b> rows start unticked: look, fix the qty or amount if needed, and tick them. Change the receipt line in the menu if it picked the wrong one.</li><li>Savings and club prices on the receipt come off the item above them. Weighed items use the kg on the receipt. Totals, GST and payment lines are never counted as items. If the lines found do not add up to the receipt total, it tells you.</li><li><b>Bought something that wasn\'t on your list?</b> A swap (Sprite because the L&amp;P was out) or an extra shows under <b>Not on your list</b>, in bold, ready to add. Clear lines start ticked; untick any you don\'t want. Once approved they count in the trip total like any other item and show in <b>bold</b> in History, so the spontaneous buys are easy to spot. Anything on your list that you didn\'t buy stays on your list.</li><li>A line that might be one of your items, but the app isn\'t sure, shows in both places, unticked: tick the one that is right.</li><li>Nothing changes until you tap <b>Approve</b>. From the cart, Approve also finishes the shop, and the trip total then matches the receipt. Only that trip changes: your list and your other trips stay as they are. The approved prices then show in History, Reports and the price history.</li><li><b>When the totals don\'t match.</b> If the trip total after Approve doesn\'t match the receipt total, a review screen opens by itself. At the top, <b>Difference</b> shows how far out the app is. Below, every receipt line sits next to what the app has for it, and the ones that don\'t match are <b>highlighted</b>. Items in the app that aren\'t on the receipt are listed at the bottom.</li><li><b>Tap a highlighted line to fix it.</b> Change the price, tap <b>Use the receipt price</b>, untick it (<b>Untick: don\'t count it</b> for a receipt line, <b>Untick: I didn\'t buy it</b> for an item that isn\'t on the receipt), or tap <b>It\'s a discount</b> for a saving read as an item: it then comes off the item above it on the receipt. <b>Not this item</b> lets go of a wrong match. The Difference counts down as you go, and turns green at <b>$0.00</b>.</li><li>Tap <b>Done: check and approve</b> (or <b>Back to the full list</b>) to see every item and the Approve button. <b>Fix the difference line by line</b> on the full list opens the review screen again. Nothing is saved until you tap Approve. An item you untick because you didn\'t buy it comes off the trip; from the cart it goes back on your list.</li><li>If it misreads something, open <b>The text it read</b>, fix it and tap <b>Read again</b>, or just type the amounts in the boxes. <b>Type the prices in myself</b> skips the photo. <b>Undo receipt prices</b> in the trip puts it back.</li><li>It learns: when you approve a receipt line as one of your items, it matches it straight away next time at that store.</li></ul>'],
     ['hist', 'History', '<ul><li><b>Trips</b> lists each shop with the store, date and total. Tap one to see what you bought. <b>Add all to list again</b> puts the lot back on your list.</li><li><b>Every item</b> lets you search and filter by category, store and time.</li><li>Tap any item to see its <b>price history</b>: what you paid, when and where.</li></ul>'],
     ['rep', 'Reports and export', '<ul><li><b>Reports</b> shows trips, total spent and spend per trip, your most popular items, spending by category and by store. Filter by time, category and store.</li><li><b>Export:</b> in the <b>More</b> tab, tap <b>Export history (CSV)</b> for a spreadsheet of everything you\'ve bought, with date, store, branch, price and barcode.</li></ul>'],
     ['order', 'Changing category order', '<ul><li>Tap the <b>cog</b>, then <b>Category order</b> (or <b>Change category order</b> in More).</li><li>Use ▲ and ▼ to move a category. Your list and menus follow straight away.</li><li><b>Reset to the standard order</b> puts it back. Items always stay in their own category.</li></ul>'],
@@ -2209,6 +2302,13 @@ header.strip { overflow: hidden; }
         var yes = sp[1] === '1'; srow.same = yes; srow.on = yes;
         var sa = ui.sheet.adds && ui.sheet.adds[srow.j]; if (sa) sa.on = !yes; // No: the line joins the trip as its own item
         renderSheet(); } break;
+      case 'rcfix': if (ui.sheet && ui.sheet.type === 'rcpt') { ui.sheet.fix = v === '1'; ui.sheet.fixOpen = ''; ui.sheet.fresh = true; renderSheet(); var sh = layer.querySelector('.sheet'); if (sh) sh.scrollTop = 0; } break;
+      case 'rcfixopen': if (ui.sheet && ui.sheet.fix) { ui.sheet.fixOpen = ui.sheet.fixOpen === v ? '' : v; ui.sheet.fresh = true; renderSheet(); var fi = layer.querySelector('[data-fx="' + v + '"] input'); if (fi && ui.sheet.fixOpen) { fi.focus(); if (fi.select) fi.select(); } } break;
+      case 'rcfixuse': if (ui.sheet && ui.sheet.rows) { var ur = ui.sheet.rows[+v], uln = ur && rcLine(ui.sheet, ur.j); if (!uln) break; ur.total = rcWant(ui.sheet, +v, ur.j); ur.totalText = undefined; ur.on = true; if (ur.same === null) ur.same = true; var ut = rcTrip(ui.sheet); if (ur.qty == null || isNaN(ur.qty)) ur.qty = ut.items[ur.n].qty || 1; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcfixdrop': if (ui.sheet && ui.sheet.rows) { var dr = ui.sheet.rows[+v]; if (!dr) break; dr.drop = !dr.drop; if (dr.drop) dr.on = false; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcfixfree': if (ui.sheet && ui.sheet.rows) { var fr = ui.sheet.rows[+v]; if (!fr) break; var fj = fr.j; fr.j = -1; fr.conf = 'none'; fr.note = ''; fr.on = false; fr.same = undefined; var ft = rcTrip(ui.sheet); fr.qty = ft.items[fr.n].qty == null ? 1 : +ft.items[fr.n].qty; fr.total = ft.items[fr.n].price == null ? null : G.lineCents(ft.items[fr.n]) / 100; if (fj >= 0) { var fa = rcAddFor(ui.sheet, fj); fa.on = false; } ui.sheet.fixOpen = 'L' + fj; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcfixtog': if (ui.sheet && ui.sheet.adds) { var ta2 = rcAddFor(ui.sheet, +v); ta2.on = !ta2.on; ui.sheet.fresh = true; renderSheet(); } break;
+      case 'rcfixdisc': if (ui.sheet && ui.sheet.adds) { if (rcMarkDiscount(ui.sheet, rcTrip(ui.sheet), +v)) { ui.sheet.fresh = true; renderSheet(); } } break;
       case 'rcmanual': if (ui.sheet) { ui.sheet.manual = true; ui.sheet.text = ''; rcReview(ui.sheet); } break;
       case 'rcreparse': if (ui.sheet) { var ta = $('rcText'); ui.sheet.text = ta ? ta.value : ui.sheet.text; ui.sheet.manual = true; rcReview(ui.sheet); } break;
       case 'rcnew': if (ui.sheet) { ui.sheet.text = ''; ui.sheet.parsed = null; ui.sheet.manual = false; ui.sheet.err = ''; ui.sheet.step = 'pick'; ui.sheet.fresh = true; renderSheet(); } break;
@@ -2219,7 +2319,7 @@ header.strip { overflow: hidden; }
       case 'again': {
         var tr = r['t:' + v], ch = {}, rr = r, n2 = 0;
         tr.items.forEach(function (p) {
-          var c = G.addItem(rr, { name: p.name, qty: p.qty, price: p.price, cat: p.cat, barcode: p.barcode || '' });
+          var c = G.addItem(rr, { name: p.name, qty: p.qty, price: p.price, deal: p.deal || null, cat: p.cat, barcode: p.barcode || '' });
           rr = G.apply(rr, c); Object.assign(ch, c); n2++;
         });
         act(ch, n2 + ' item' + (n2 === 1 ? '' : 's') + ' added to your list', true); break;
@@ -2253,6 +2353,7 @@ header.strip { overflow: hidden; }
   document.addEventListener('input', function (e) {
     var t = e.target;
     if (t.hasAttribute && t.hasAttribute('data-rc') && t.type !== 'checkbox' && t.tagName !== 'SELECT') { rcInput(t); return; }
+    if (t.form && t.form.elements && t.form.elements.dealN && /^(qty|price|dealN|dealPrice)$/.test(t.name)) dealPreview(t.form);
     if (t.id === 'nName') { if (!t.value.trim()) ui.addBarcode = ui.addBarcode; addHint(); }
     if (t.hasAttribute && t.hasAttribute('data-hf') && t.id === 'hq') { ui.hf.q = t.value; var rows = G.filterPurchases(R(), ui.hf), sum = 0; rows.forEach(function (p) { sum += G.cents(p.line); }); $('hRows').innerHTML = histRows(rows); $('hSum').innerHTML = '<b>' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + ' · ' + G.money(sum / 100) + '</b>'; }
   });
@@ -2281,24 +2382,24 @@ header.strip { overflow: hidden; }
     var r = R();
     if (f.id === 'addForm') {
       var name = f.elements.name.value.trim(); if (!name) { f.elements.name.focus(); toast('Type what you need first.'); return; }
-      var ch = G.addItem(r, { name: name, qty: f.elements.qty.value, price: f.elements.price.value, cat: f.elements.cat.value || undefined, barcode: ui.addBarcode });
+      var ch = G.addItem(r, { name: name, qty: f.elements.qty.value, price: f.elements.price.value, dealN: f.elements.dealN.value, dealPrice: f.elements.dealPrice.value, cat: f.elements.cat.value || undefined, barcode: ui.addBarcode });
       var it = ch[Object.keys(ch).filter(function (k) { return k.slice(0, 2) === 'i:'; })[0]];
       ui.addBarcode = ''; f.reset();
       // Done adding: let go of the form so the keyboard and the Item suggestion list close (iOS reopens them on refocus).
       var ae = document.activeElement; if (ae && ae.form === f && ae.blur) ae.blur();
       act(ch, it.name + ' added to ' + it.cat, true);
-      var nf = $('addForm'); if (nf) { nf.elements.name.value = ''; nf.elements.qty.value = ''; nf.elements.price.value = ''; nf.elements.cat.value = ''; addHint(); var fa = document.activeElement; if (fa && fa.form === nf && fa.blur) fa.blur(); }
+      var nf = $('addForm'); if (nf) { nf.elements.name.value = ''; nf.elements.qty.value = ''; nf.elements.price.value = ''; nf.elements.cat.value = ''; nf.elements.dealN.value = ''; nf.elements.dealPrice.value = ''; dealPreview(nf); addHint(); var fa = document.activeElement; if (fa && fa.form === nf && fa.blur) fa.blur(); }
       var row = document.querySelector('.item[data-id="' + it.id + '"]'); if (row) row.classList.add('flash');
       return;
     }
     if (f.id === 'editForm') {
       var id = f.getAttribute('data-id');
-      act(G.editItem(r, id, { name: f.elements.name.value, qty: f.elements.qty.value, price: f.elements.price.value, cat: f.elements.cat.value, barcode: f.elements.barcode.value }), 'Saved');
+      act(G.editItem(r, id, { name: f.elements.name.value, qty: f.elements.qty.value, price: f.elements.price.value, dealN: f.elements.dealN.value, dealPrice: f.elements.dealPrice.value, cat: f.elements.cat.value, barcode: f.elements.barcode.value }), 'Saved');
       closeSheet(); return;
     }
     if (f.getAttribute('data-form') === 'cedit') {
       var cid = f.getAttribute('data-id');
-      ui.sheet.fresh = true; act(G.editItem(r, cid, { qty: f.elements.qty.value, price: f.elements.price.value }), 'Saved'); return;
+      ui.sheet.fresh = true; act(G.editItem(r, cid, { qty: f.elements.qty.value, price: f.elements.price.value, dealN: f.elements.dealN.value, dealPrice: f.elements.dealPrice.value }), 'Saved'); return;
     }
     if (f.id === 'limitForm') { var v = f.elements.limit.value.trim(); if (!v) throw new Error('Type an amount, like 150.'); act(G.setLimit(r, v), 'Limit set to ' + G.money(G.parseMoney(v))); closeSheet(); return; }
     if (f.id === 'doneForm') {
@@ -2431,13 +2532,14 @@ header.strip { overflow: hidden; }
     s.rows = rv.rows; s.adds = {}; rv.adds.forEach(function (a) { s.adds[a.j] = a; });
     s.step = 'review'; s.fresh = true;
     if (!s.parsed.items.length && !s.err && !s.manual) s.err = 'No prices were found in what was read. Check the text below and fix it, take another photo, or type the prices straight into the boxes.';
+    s.fix = rcOff(s) && !s.err; s.fixOpen = ''; // an error message shows on the full list first
     renderSheet();
   }
   function rcLine(s, j) { return j >= 0 && s.parsed ? s.parsed.items[j] : null; }
   function rcEach(total, qty) { return total != null && qty > 0 ? G.money(GGR.eachFrom(total, qty)) + (Math.abs(qty - 1) > 0.0005 ? ' each' : '') : ''; }
   function rcCount(s) {
     var t = rcTrip(s), n = 0; if (!t || !s.rows) return 0;
-    s.rows.forEach(function (row) { var it = t.items[row.n]; if (row.on && it && (row.total == null || row.qty == null || isNaN(row.total) || isNaN(row.qty) || GGR.changed(it, row.qty, row.total))) n++; });
+    s.rows.forEach(function (row) { var it = t.items[row.n]; if (row.drop && it) { n++; return; } if (row.on && it && (row.total == null || row.qty == null || isNaN(row.total) || isNaN(row.qty) || GGR.changed(it, row.qty, row.total))) n++; });
     Object.keys(s.adds || {}).forEach(function (j) { if (s.adds[j].on && !rcUsed(s, +j)) n++; });
     return n;
   }
@@ -2448,7 +2550,7 @@ header.strip { overflow: hidden; }
   /* What the trip will total once Approve is tapped, from what is ticked now. */
   function rcAfter(s) {
     var t = rcTrip(s), c = 0; if (!t) return 0;
-    (s.rows || []).forEach(function (row) { var it = t.items[row.n]; if (!it) return; c += row.on && row.total != null && !isNaN(row.total) ? Math.round(row.total * 100) : G.lineCents(it); });
+    (s.rows || []).forEach(function (row) { var it = t.items[row.n]; if (!it || row.drop) return; c += row.on && row.total != null && !isNaN(row.total) ? Math.round(row.total * 100) : G.lineCents(it); });
     t.items.forEach(function (it, n) { if (!(s.rows || []).some(function (row) { return row.n === n; })) c += G.lineCents(it); });
     Object.keys(s.adds || {}).forEach(function (j) { var a = s.adds[j]; if (a.on && !rcUsed(s, +j) && a.total != null && !isNaN(a.total)) c += Math.round(a.total * 100); });
     return c / 100;
@@ -2474,6 +2576,7 @@ header.strip { overflow: hidden; }
         '<p class="tiny muted">Tips: lay the receipt flat in good light, fill the screen with it, and keep it straight. A long receipt can go in two photos: do the top first, then Add another photo.</p></div>' +
         (C ? '<div class="btns"><button type="button" class="btn small" data-a="rcback">Back</button><button type="button" class="btn small" data-a="rcno">No receipt, finish the shop</button></div>' : '');
     }
+    if (s.fix) return rcFixSheet(s, t, where);
     var p = s.parsed || { items: [], skipped: [], total: null, sum: 0 }, lines = p.items;
     var h = '<div class="panel rc-head"><p><b>' + where + '</b></p>';
     if (lines.length) h += '<p>Found ' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ' adding up to <b>' + G.money(p.sum) + '</b>' + (p.total != null ? '. Receipt total: <b>' + G.money(p.total) + '</b>' + (p.totalGuess ? ' (hard to read, so check it)' : '') : '') + '.</p>';
@@ -2488,6 +2591,7 @@ header.strip { overflow: hidden; }
       h += '<div class="f"><label for="rcL' + k + '">Receipt line</label><select id="rcL' + k + '" data-rc="line" data-k="' + k + '">' + opts(row.j) + '</select></div>';
       if (ln) h += '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>';
       if (row.note) h += '<p class="tiny muted rc-note">' + esc(row.note) + '</p>';
+      if (row.drop) h += '<p class="tiny rc-note rc-dropped">Taken off this trip: you said you didn\'t buy it' + (C ? ', so it goes back on your list' : '') + '. <button type="button" class="linkbtn" data-a="rcfixdrop" data-v="' + k + '">Put it back</button></p>';
       if (ln && row.same === null) h += '<div class="rc-same" role="group" aria-label="Same item?"><p><b>Same item?</b> Is <b>' + esc(GGR.niceName(ln.name)) + '</b> on the receipt your <b>' + esc(it.name) + '</b>?</p><div class="btns"><button type="button" class="btn small pri" data-a="rcsame" data-v="' + k + ':1">Yes, same item</button><button type="button" class="btn small" data-a="rcsame" data-v="' + k + ':0">No, add it separately</button></div></div>';
       h += '<div class="row rc-nums"><div class="f"><label for="rcQ' + k + '">Qty</label><input id="rcQ' + k + '" data-rc="qty" data-k="' + k + '" inputmode="decimal" value="' + esc(row.qty == null || isNaN(row.qty) ? (row.qtyText || '') : G.qtyText(row.qty)) + '"></div>' +
         '<div class="f"><label for="rcT' + k + '">Paid (line)</label><input id="rcT' + k + '" data-rc="total" data-k="' + k + '" inputmode="decimal" placeholder="0.00" value="' + esc(row.total == null || isNaN(row.total) ? (row.totalText || '') : row.total.toFixed(2)) + '"></div>' +
@@ -2502,6 +2606,7 @@ header.strip { overflow: hidden; }
         var mb = (s.rows || []).filter(function (r) { return r.j === j && !rcHolds(r); }).map(function (r) { return t.items[r.n] && t.items[r.n].name; })[0] || '';
         h += '<div class="rc-row add rc-extra' + (a.on ? ' on' : '') + '"><div class="rc-top"><label class="rc-tick"><input type="checkbox" data-rc="aon" data-j="' + j + '"' + (a.on ? ' checked' : '') + '><span><b class="rc-xname" id="rcAX' + j + '">' + esc(a.name || 'Unnamed line') + '</b><small>Add to this trip · ' + (a.total == null || isNaN(a.total) ? 'no amount' : G.money(a.total)) + '</small></span></label><span class="rc-conf extra">Not on list</span></div>' +
           (mb ? '<p class="tiny rc-note">Might be <b>' + esc(mb) + '</b> from your list. If it is, tick that row above instead.</p>' : '') +
+          (a.disc ? '<p class="tiny rc-note">Marked as a discount: it came off <b>' + esc(a.disc.name) + '</b>. <button type="button" class="linkbtn" data-a="rcfixdisc" data-v="' + j + '">Not a discount</button></p>' : '') +
           (a.dup ? '<p class="tiny rc-note rc-dup">Looks like <b>' + esc(a.dup) + '</b> read twice, so it starts unticked. Tick it only if you bought two.</p>' : '') + '<div class="rc-raw">' + ln.lines.map(esc).join('<br>') + '</div>' +
           '<div class="f"><label for="rcAN' + j + '">Name</label><input id="rcAN' + j + '" data-rc="aname" data-j="' + j + '" value="' + esc(a.name) + '"></div>' +
           '<div class="row rc-nums"><div class="f"><label for="rcAC' + j + '">Category</label><select id="rcAC' + j + '" data-rc="acat" data-j="' + j + '">' + cats.map(function (c) { return '<option' + (c === a.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div></div>' +
@@ -2512,12 +2617,148 @@ header.strip { overflow: hidden; }
     h += '<details class="rc-text"' + (lines.length ? '' : ' open') + '><summary>The text it read</summary><p class="tiny muted">Fix a misread price or name here, then tap Read again.</p><textarea id="rcText" class="inp" rows="8" spellcheck="false">' + esc(s.text || '') + '</textarea><div class="btns"><button type="button" class="btn small" data-a="rcreparse">Read again</button></div></details>';
     var n = rcCount(s);
     h += '<p class="rc-after" id="rcAfter">' + rcAfterText(s) + '</p>';
+    if (p.total != null) h += '<div class="btns rc-fixgo"' + (rcOff(s) ? '' : ' hidden') + '><button type="button" class="btn wide" data-a="rcfix" data-v="1">Fix the difference line by line</button></div>';
     h += '<div class="btns rc-go"><button type="submit" class="btn wide pri" id="rcApprove"' + (n || C ? '' : ' disabled') + '>' + rcBtn(s, n) + '</button></div><p class="tiny muted" style="text-align:center">' + (C ? 'Approve saves the trip with these prices and empties the cart. Anything still on your list stays there.' : 'Changes this trip only: your list and your other trips stay as they are.') + '</p>' +
       (C ? '<div class="btns"><button type="button" class="btn small" data-a="rcback">Back</button></div>' : '') + '</form>';
     h += pick + '<div class="btns"><label for="rcCam" class="btn small">📷 Add another photo</label><button type="button" class="btn small" data-a="rcnew">Start again</button></div>';
     return h;
   }
+  /* ---- Receipt review: the fix screen. Opens by itself when the trip total after Approve doesn't match the receipt total.
+     Every receipt line sits next to what the app has for it; mismatches are highlighted; tap one to fix it. ---- */
+  function rcDiff(s) { var p = s.parsed || {}; return p.total == null ? 0 : Math.round((p.total - rcAfter(s)) * 100) / 100; }
+  function rcOff(s) { var p = s.parsed || {}; return p.total != null && (p.items || []).length > 0 && Math.abs(rcDiff(s)) >= 0.005; }
+  function rcRowAmt(t, row) { var it = t.items[row.n]; if (!it || row.drop) return 0; return row.on && row.total != null && !isNaN(row.total) ? row.total : G.lineCents(it) / 100; }
+  function rcHolder(s, j) { return (s.rows || []).filter(function (r) { return r.j === j && rcHolds(r); })[0] || null; }
+  /* What receipt line j should come to for row k: the line, less any savings the person marked onto that item. */
+  function rcWant(s, k, j) {
+    var want = rcLine(s, j).total;
+    Object.keys(s.adds || {}).forEach(function (q) { var dd = s.adds[q].disc; if (dd && dd.k === k) want -= Math.abs(rcLine(s, +q).total); });
+    return Math.max(0, Math.round(want * 100) / 100);
+  }
+  function rcFixEntries(s, t) {
+    var out = [], lines = (s.parsed || {}).items || [], paired = {};
+    lines.forEach(function (ln, j) {
+      var e = { key: 'L' + j, j: j, ln: ln, rec: GGR.niceName(ln.name) || 'Unnamed line', recAmt: ln.total };
+      var a = s.adds && s.adds[j], row = rcHolder(s, j);
+      // An unsure match the person hasn't ticked yet still pairs up here, unless the line is counted as something else.
+      if (!row && !(a && (a.on || a.disc))) row = (s.rows || []).filter(function (r) { return r.j === j && !r.drop && !paired[s.rows.indexOf(r)]; })[0] || null;
+      if (row) paired[s.rows.indexOf(row)] = 1;
+      if (row) {
+        var it = t.items[row.n], k0 = s.rows.indexOf(row), want = rcWant(s, k0, j);
+        e.kind = 'row'; e.k = k0; e.app = it ? it.name : '?'; e.appAmt = rcRowAmt(t, row); e.bad = Math.abs(e.appAmt - want) >= 0.005;
+        e.st = e.bad ? G.money(Math.abs(e.appAmt - want)) + (e.appAmt > want ? ' over' : ' short') : (want !== ln.total ? 'Matches with saving' : 'Matches');
+      }
+      else if (a && a.disc) { e.kind = 'add'; e.a = a; e.app = 'Discount off ' + a.disc.name; e.appAmt = -ln.total; e.bad = false; e.st = 'Discount'; }
+      else if (a && a.on) { e.kind = 'add'; e.a = a; e.app = (a.name || 'Unnamed line') + ' (not on your list)'; e.appAmt = a.total == null || isNaN(a.total) ? 0 : a.total; e.bad = Math.abs(e.appAmt - ln.total) >= 0.005; e.st = e.bad ? G.money(Math.abs(e.appAmt - ln.total)) + (e.appAmt > ln.total ? ' over' : ' short') : 'Matches'; }
+      else { e.kind = 'add'; e.a = a || null; e.app = 'Not counted'; e.appAmt = 0; e.bad = true; e.st = 'Not counted'; }
+      out.push(e);
+    });
+    (s.rows || []).forEach(function (row, k) {
+      if (paired[k]) return;
+      var it = t.items[row.n]; if (!it) return;
+      var amt = rcRowAmt(t, row);
+      out.push({ key: 'I' + k, kind: 'item', k: k, rec: 'Not on the receipt', recAmt: null, app: it.name, appAmt: amt, bad: !row.drop && amt > 0, st: row.drop ? 'Taken off' : 'Not on receipt' });
+    });
+    return out;
+  }
+  function rcDiffHTML(s) {
+    var d = rcDiff(s), p = s.parsed || {};
+    if (Math.abs(d) < 0.005) return '<span class="rc-dlab">Difference</span><b class="rc-dnum">' + G.money(0) + '</b><span class="rc-dsub">Matches the receipt ✓</span>';
+    return '<span class="rc-dlab">Difference</span><b class="rc-dnum">' + G.money(Math.abs(d)) + '</b><span class="rc-dsub">' + (d > 0 ? 'The app is short' : 'The app is over') + ' · receipt ' + G.money(p.total) + ', app ' + G.money(rcAfter(s)) + '</span>';
+  }
+  function rcFixSheet(s, t, where) {
+    var es = rcFixEntries(s, t), bad = es.filter(function (e) { return e.bad; }).length, zero = !rcOff(s);
+    var h = '<div class="rc-diff' + (zero ? ' zero' : '') + '" id="rcDiff" role="status" aria-live="polite">' + rcDiffHTML(s) + '</div>';
+    if (s.err) h += '<p class="rc-err">' + esc(s.err) + '</p>';
+    h += '<div class="panel rc-head"><p><b>' + where + '</b></p><p class="tiny">The trip total doesn\'t match the receipt yet. Each receipt line is next to what the app has. Tap a <b>highlighted</b> one to fix it: change the price, untick it, or mark it as a discount. The difference goes down to $0.00 as you fix them. Nothing is saved until you tap <b>Approve</b>.</p>' +
+      '<p class="tiny muted" id="rcFixCount">' + (bad ? bad + ' to check' : 'Nothing left to check') + '</p></div>';
+    h += '<div class="rc-fix-head" aria-hidden="true"><span>On the receipt</span><span>In the app</span></div><div class="rc-fixlist">';
+    es.forEach(function (e) {
+      var open = s.fixOpen === e.key;
+      h += '<div class="rc-fx' + (e.bad ? ' bad' : '') + (open ? ' open' : '') + '" data-fx="' + e.key + '">' +
+        '<button type="button" class="rc-fxbtn" data-a="rcfixopen" data-v="' + e.key + '" aria-expanded="' + open + '">' +
+        '<span class="rc-fxc"><b>' + esc(e.rec) + '</b><small>' + (e.recAmt == null ? '-' : G.money(e.recAmt)) + '</small></span>' +
+        '<span class="rc-fxc"><b class="fx-app">' + esc(e.app) + '</b><small class="fx-amt">' + G.money(e.appAmt) + '</small></span>' +
+        '<span class="rc-fxst">' + esc(e.st) + '</span></button>';
+      if (open) h += rcFixPanel(s, t, e);
+      h += '</div>';
+    });
+    h += '</div>';
+    h += '<div class="btns rc-go"><button type="button" class="btn wide pri" data-a="rcfix" data-v="0">' + (zero ? 'Done: check and approve' : 'Back to the full list') + '</button></div>' +
+      '<p class="tiny muted" style="text-align:center">The full list has every item, the Approve button, and the text it read.</p>';
+    return h;
+  }
+  function rcFixPanel(s, t, e) {
+    var h = '<div class="rc-fxpanel">';
+    if (e.kind === 'row' || e.kind === 'item') {
+      var row = s.rows[e.k], it = t.items[row.n];
+      if (!row.drop) h += '<div class="f"><label for="rcFT' + e.k + '">Price in the app (line)</label><div class="money-in"><input id="rcFT' + e.k + '" data-rc="total" data-k="' + e.k + '" inputmode="decimal" placeholder="0.00" value="' + (row.on && row.total != null && !isNaN(row.total) ? row.total.toFixed(2) : (G.lineCents(it) / 100).toFixed(2)) + '"></div></div>';
+      h += '<div class="btns">';
+      if (e.kind === 'row' && !row.drop) h += '<button type="button" class="btn small pri" data-a="rcfixuse" data-v="' + e.k + '">Use the receipt price</button>';
+      if (e.kind === 'item') h += '<button type="button" class="btn small' + (row.drop ? ' pri' : '') + '" data-a="rcfixdrop" data-v="' + e.k + '">' + (row.drop ? 'Put it back' : 'Untick: I didn\'t buy it') + '</button>';
+      if (e.kind === 'row') h += '<button type="button" class="btn small" data-a="rcfixfree" data-v="' + e.k + '">Not this item</button>';
+      h += '</div>';
+    } else {
+      var a = e.a || rcAddFor(s, e.j);
+      if (a.disc) h += '<p class="tiny">Taken off <b>' + esc(a.disc.name) + '</b>, the item above it on the receipt.</p><div class="btns"><button type="button" class="btn small" data-a="rcfixdisc" data-v="' + e.j + '">Not a discount</button></div>';
+      else {
+        h += '<div class="f"><label for="rcFA' + e.j + '">Price in the app (line)</label><div class="money-in"><input id="rcFA' + e.j + '" data-rc="atotal" data-j="' + e.j + '" inputmode="decimal" placeholder="0.00" value="' + (a.total == null || isNaN(a.total) ? '' : a.total.toFixed(2)) + '"></div></div>';
+        h += '<div class="btns"><button type="button" class="btn small' + (a.on ? '' : ' pri') + '" data-a="rcfixtog" data-v="' + e.j + '">' + (a.on ? 'Untick: don\'t count it' : 'Tick: count it') + '</button><button type="button" class="btn small" data-a="rcfixdisc" data-v="' + e.j + '">It\'s a discount</button></div>';
+        if (a.dup) h += '<p class="tiny rc-dup">Looks like <b>' + esc(a.dup) + '</b> read twice.</p>';
+      }
+    }
+    return h + '</div>';
+  }
+  function rcAddFor(s, j) {
+    var ln = rcLine(s, j);
+    return s.adds[j] || (s.adds[j] = { j: j, on: false, extra: true, maybe: '', name: GGR.niceName(ln.name), qty: ln.kg || ln.count || 1, total: ln.total, cat: G.guessCategory(GGR.niceName(ln.name), R()) });
+  }
+  /* A line marked as a discount comes off the nearest counted line above it on the receipt (where savings print). */
+  function rcMarkDiscount(s, t, j) {
+    var a = rcAddFor(s, j), ln = rcLine(s, j);
+    if (a.disc) { // undo: put the item above back the way it was
+      var d = a.disc;
+      if (d.k != null) { var r0 = s.rows[d.k]; if (r0) { r0.on = d.prev.on; r0.total = d.prev.total; r0.note = d.prev.note; } }
+      else if (d.j != null && s.adds[d.j]) { s.adds[d.j].total = d.prev.total; s.adds[d.j].on = d.prev.on; }
+      delete a.disc; a.on = false; return true;
+    }
+    var amt = Math.abs(ln.total);
+    for (var i = j - 1; i >= 0; i--) {
+      var row = rcHolder(s, i);
+      if (row && !row.drop) {
+        var it = t.items[row.n], cur = rcRowAmt(t, row), k = s.rows.indexOf(row);
+        a.disc = { k: k, name: it.name, prev: { on: row.on, total: row.total, note: row.note } };
+        row.on = true; if (row.qty == null || isNaN(row.qty)) row.qty = it.qty == null ? 1 : +it.qty; if (row.same === null) row.same = true;
+        row.total = Math.max(0, Math.round((cur - amt) * 100) / 100); row.totalText = undefined;
+        row.note = (row.note ? row.note + '. ' : '') + 'Includes a ' + G.money(amt) + ' saving you marked';
+        a.on = false; return true;
+      }
+      var b = s.adds[i];
+      if (b && b.on && !b.disc && !rcHolder(s, i)) {
+        a.disc = { j: i, name: b.name || 'the line above', prev: { on: b.on, total: b.total } };
+        b.total = Math.max(0, Math.round(((b.total || 0) - amt) * 100) / 100); b.totalText = undefined;
+        a.on = false; return true;
+      }
+    }
+    toast('There is no counted line above this one to take it off. Lower that item\'s price instead.'); return false;
+  }
+  function rcFixPaint(s) {
+    var t = rcTrip(s); if (!t) return;
+    var dv = layer.querySelector('#rcDiff'); if (dv) { dv.innerHTML = rcDiffHTML(s); dv.classList.toggle('zero', !rcOff(s)); }
+    var es = rcFixEntries(s, t), bad = 0;
+    es.forEach(function (e) {
+      if (e.bad) bad++;
+      var el = layer.querySelector('[data-fx="' + e.key + '"]'); if (!el) return;
+      el.classList.toggle('bad', !!e.bad);
+      var st = el.querySelector('.rc-fxst'), am = el.querySelector('.fx-amt'), ap = el.querySelector('.fx-app');
+      if (st) st.textContent = e.st; if (am) am.textContent = G.money(e.appAmt); if (ap) ap.textContent = e.app;
+    });
+    var c = layer.querySelector('#rcFixCount'); if (c) c.textContent = bad ? bad + ' to check' : 'Nothing left to check';
+    var go = layer.querySelector('.rc-go [data-a="rcfix"]'); if (go) go.textContent = rcOff(s) ? 'Back to the full list' : 'Done: check and approve';
+  }
   function rcRefresh(s) {
+    if (s.fix) { rcFixPaint(s); return; }
+    var fg = layer.querySelector('.rc-fixgo'); if (fg) fg.hidden = !rcOff(s);
     var b = layer.querySelector('#rcApprove'); if (!b) return; var n = rcCount(s);
     b.disabled = !n && !s.cart; b.textContent = rcBtn(s, n);
     var a = layer.querySelector('#rcAfter'); if (a) a.innerHTML = rcAfterText(s);
@@ -2561,6 +2802,7 @@ header.strip { overflow: hidden; }
     if (s.cart && cartSig() !== s.sig) { s.err = 'Your cart changed while you were checking, so the receipt has been matched again. Check it and tap Approve again.'; rcReview(s, true); return; }
     var rows = [], adds = [];
     s.rows.forEach(function (row) {
+      if (row.drop && t.items[row.n]) { rows.push({ n: row.n, drop: true }); return; }
       if (!row.on) return; var it = t.items[row.n]; if (!it) return;
       if (row.total == null || isNaN(row.total)) throw new Error('Type what you paid for ' + it.name + ', or untick it.');
       if (!(row.qty > 0)) throw new Error('Check the qty for ' + it.name + '.');
